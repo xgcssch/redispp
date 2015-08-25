@@ -203,62 +203,52 @@ namespace redis
         template <class	CompletionToken>
         auto async_command(const std::string& Command, BOOST_ASIO_MOVE_ARG(CompletionToken) token)
         {
-            typedef
-                boost::asio::detail::async_result_init<
-                CompletionToken,
-                void(boost::system::error_code ec, std::string Data)> t_completion;
-
-            auto spCompletion = std::make_shared<t_completion>(BOOST_ASIO_MOVE_CAST(CompletionToken)(token));
-
-            //auto spCurrentResponse = std::make_shared<Response>(ResponseHandler);
-   //         io_service_.dispatch(Strand_.wrap([this, spCurrentResponse]() {requestCreated(spCurrentResponse); }));
+            using handler_type = typename boost::asio::handler_type<CompletionToken,
+                void(boost::system::error_code, std::string Data)>::type;
+            handler_type handler(std::forward<decltype(token)>(token));
+            boost::asio::async_result<decltype(handler)> result(handler);
 
             if (!Socket_.is_open())
             {
                 Manager_.async_getConnectedSocket(io_service_,
-                                                  [this, Command, spCompletion](boost::system::error_code ec, boost::asio::ip::tcp::socket& Socket) mutable {
+                                                  [this, Command, handler](boost::system::error_code ec, boost::asio::ip::tcp::socket& Socket) mutable {
                     if (ec)
-                    {
-                        std::string ss;
-                        spCompletion->handler(ec, ss);
-                    }
+                        return handler(ec,std::string());
                     else
                     {
                         Socket_ = std::move(Socket);
 
-                        internalSendData(Command, spCompletion);
+                        internalSendData(Command, std::forward<handler_type>(handler) );
                     }
                 });
             }
             else
-                internalSendData(Command, spCompletion);
+                internalSendData(Command, std::forward<handler_type>(handler));
 
-            return spCompletion->result.get();
+            return result.get();
         }
-        template <class	CompletionToken>
-        void internalSendData(const std::string& Command, std::shared_ptr < boost::asio::detail::async_result_init <
-                              CompletionToken,
-                              void(boost::system::error_code ec, std::string Data) >> &spCompletion)
+        template <class	ConnectHandler>
+        void internalSendData(const std::string& Command, ConnectHandler&& handler)
         {
             boost::system::error_code ec;
 
             auto spCommandWithLineEnding = std::make_shared<std::string>(Command);
             *spCommandWithLineEnding += "\r\n";
             Socket_.async_send(boost::asio::buffer(*spCommandWithLineEnding),
-                               [this, spCommandWithLineEnding, spCompletion](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                               [this, spCommandWithLineEnding, handler](const boost::system::error_code& ec, std::size_t bytes_transferred) mutable {
                 if (ec)
-                    spCompletion->handler(ec, std::string());
+                    handler(ec, std::string());
                 else
                 {
                     auto buf = std::make_shared<std::vector<char>>(1024);
                     Socket_.async_read_some(boost::asio::buffer(*buf),
-                                            [this, buf, spCompletion](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                            [this, buf, handler](const boost::system::error_code& ec, std::size_t bytes_transferred) mutable {
                         if (ec)
-                            spCompletion->handler(ec, std::string());
+                            handler(ec, std::string());
                         else
                         {
                             //spResponse->dataReceived(bytes_transferred);
-                            spCompletion->handler(ec, std::string(buf->data(), bytes_transferred));
+                            handler(ec, std::string(buf->data(), bytes_transferred));
                             //io_service_.dispatch(Strand_.wrap([this]() {requestCompleted(); }));
                         }
                     });
@@ -332,7 +322,7 @@ int main(int argc, char**argv)
 #ifdef _DEBUG
         boost::asio::io_service io_service;
 
-        redis::SimpleConnectionManager scm("something.de", 26379);
+        redis::SimpleConnectionManager scm("bingo.de", 26379);
 
         redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
@@ -347,32 +337,36 @@ int main(int argc, char**argv)
         //    else
         //        std::cerr << Data << std::endl;
         //});
+        //std::thread thread([&io_service]() { io_service.run(); });
+        //thread.join();
 
-        //// Futures Version
-        //boost::system::error_code ec;
-        //auto f = con.async_command("PING", boost::asio::use_future);
-        //f.wait();
-        //std::cerr << f.get() << std::endl;
-
-        // Coroutine
-        boost::asio::spawn(io_service,
-                           [&](boost::asio::yield_context yield)
-        {
-            boost::system::error_code ec;
-            //std::string Result = 
-            con.async_command("PING", yield[ec]);
-            //auto Data = con.async_command("PING", yield[ec]);
-            if (ec)
-                std::cerr << ec.message() << std::endl;
-            //else
-            //	std::cerr << Data << std::endl;
-        });
-
-        //boost::asio::io_service::work work(io_service);
+        // Futures Version
+        boost::asio::io_service::work work(io_service);
         std::thread thread([&io_service]() { io_service.run(); });
 
-        //io_service.stop();
+        boost::system::error_code ec;
+        auto f = con.async_command("PING", boost::asio::use_future);
+        f.wait();
+        std::cerr << f.get() << std::endl;
+
+        io_service.stop();
         thread.join();
+
+        //// Coroutine
+        //boost::asio::spawn(io_service,
+        //                   [&](boost::asio::yield_context yield)
+        //{
+        //    boost::system::error_code ec;
+        //    auto Data = con.async_command("PING", yield[ec]);
+        //    if (ec)
+        //        std::cerr << ec.message() << std::endl;
+        //    else
+        //    	std::cerr << Data << std::endl;
+        //});
+
+        //std::thread thread([&io_service]() { io_service.run(); });
+        //thread.join();
+
 #else
         redis::Response res(
             [](auto ec, auto Data)
