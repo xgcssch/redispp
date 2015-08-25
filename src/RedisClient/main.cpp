@@ -105,11 +105,11 @@ namespace redis
 
                     switch (*pTopEntryStart)
                     {
-                    case '+':
-                        spPart = std::make_shared<ResponsePartSimpleString>(pTopEntryStart+1,Length);
+                        case '+':
+                            spPart = std::make_shared<ResponsePartSimpleString>(pTopEntryStart + 1, Length);
 
-                    default:
-                        break;
+                        default:
+                            break;
                     }
 
                     Parts_.push_back(spPart);
@@ -129,11 +129,11 @@ namespace redis
                 {
                     switch (*pStart)
                     {
-                    case '+':
-                        break;
-                    case '\r':
-                        Context.CRSeen_ = true;
-                        break;
+                        case '+':
+                            break;
+                        case '\r':
+                            Context.CRSeen_ = true;
+                            break;
                     }
                 }
 
@@ -172,152 +172,207 @@ namespace redis
         std::queue<Response::ResponseHandle> _ResponseQueue;
     };
 
-	template <class ConnectionManagerType>
-	class Connection : ConnectionBase
-	{
-	public:
-		typedef std::shared_ptr<Connection> x;
+    template <class ConnectionManagerType>
+    class Connection : ConnectionBase
+    {
+    public:
+        typedef std::shared_ptr<Connection> x;
 
-		Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager) :
+        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager) :
             ConnectionBase(io_service),
-			Manager_(Manager)
-		{}
+            Manager_(Manager)
+        {}
 
-		std::string command(const std::string& Command, boost::system::error_code& ec)
-		{
-			if (!Socket_.is_open())
-			{
-				auto Socket = Manager_.getConnectedSocket(io_service_, ec);
-				if (!ec)
-					Socket_ = std::move(Socket);
-			}
+        std::string command(const std::string& Command, boost::system::error_code& ec)
+        {
+            if (!Socket_.is_open())
+            {
+                auto Socket = Manager_.getConnectedSocket(io_service_, ec);
+                if (!ec)
+                    Socket_ = std::move(Socket);
+            }
 
-			std::string CommandWithLineEnding(Command);
-			CommandWithLineEnding += "\r\n";
-			Socket_.send(boost::asio::buffer(CommandWithLineEnding));
-			std::array<char, 1024> Buffer;
-			auto BytesRead = Socket_.read_some(boost::asio::buffer(Buffer));
-			return std::string(Buffer.data(), BytesRead);
-		}
-        void async_command(const std::string& Command, Response::ResponseHandlerType ResponseHandler)
-		{
-            auto spCurrentResponse = std::make_shared<Response>(ResponseHandler);
-            io_service_.dispatch(Strand_.wrap([this, spCurrentResponse]() {requestCreated(spCurrentResponse); }));
+            std::string CommandWithLineEnding(Command);
+            CommandWithLineEnding += "\r\n";
+            Socket_.send(boost::asio::buffer(CommandWithLineEnding));
+            std::array<char, 1024> Buffer;
+            auto BytesRead = Socket_.read_some(boost::asio::buffer(Buffer));
+            return std::string(Buffer.data(), BytesRead);
+        }
+
+        template <class	CompletionToken>
+        auto async_command(const std::string& Command, BOOST_ASIO_MOVE_ARG(CompletionToken) token)
+        {
+            typedef
+                boost::asio::detail::async_result_init<
+                CompletionToken,
+                void(boost::system::error_code ec, std::string Data)> t_completion;
+
+            auto spCompletion = std::make_shared<t_completion>(BOOST_ASIO_MOVE_CAST(CompletionToken)(token));
+
+            //auto spCurrentResponse = std::make_shared<Response>(ResponseHandler);
+   //         io_service_.dispatch(Strand_.wrap([this, spCurrentResponse]() {requestCreated(spCurrentResponse); }));
 
             if (!Socket_.is_open())
             {
                 Manager_.async_getConnectedSocket(io_service_,
-                    [this, Command, spCurrentResponse](const boost::system::error_code& ec, boost::asio::ip::tcp::socket& Socket) {
+                                                  [this, Command, spCompletion](boost::system::error_code ec, boost::asio::ip::tcp::socket& Socket) mutable {
                     if (ec)
-                        spCurrentResponse->fail(ec);
+                    {
+                        std::string ss;
+                        spCompletion->handler(ec, ss);
+                    }
                     else
                     {
                         Socket_ = std::move(Socket);
 
-                        internalSendData(Command, spCurrentResponse);
+                        internalSendData(Command, spCompletion);
                     }
                 });
             }
             else
-                internalSendData(Command, spCurrentResponse);
-		}
-        void internalSendData(const std::string& Command, Response::ResponseHandle spResponse)
+                internalSendData(Command, spCompletion);
+
+            return spCompletion->result.get();
+        }
+        template <class	CompletionToken>
+        void internalSendData(const std::string& Command, std::shared_ptr < boost::asio::detail::async_result_init <
+                              CompletionToken,
+                              void(boost::system::error_code ec, std::string Data) >> &spCompletion)
         {
             boost::system::error_code ec;
 
             auto spCommandWithLineEnding = std::make_shared<std::string>(Command);
             *spCommandWithLineEnding += "\r\n";
             Socket_.async_send(boost::asio::buffer(*spCommandWithLineEnding),
-                [this, spCommandWithLineEnding, spResponse](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                               [this, spCommandWithLineEnding, spCompletion](const boost::system::error_code& ec, std::size_t bytes_transferred) {
                 if (ec)
-                    spResponse->fail(ec);
+                    spCompletion->handler(ec, std::string());
                 else
                 {
-                    Socket_.async_read_some(boost::asio::buffer(spResponse->buffer()),
-                        [this, spResponse](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                    auto buf = std::make_shared<std::vector<char>>(1024);
+                    Socket_.async_read_some(boost::asio::buffer(*buf),
+                                            [this, buf, spCompletion](const boost::system::error_code& ec, std::size_t bytes_transferred) {
                         if (ec)
-                            spResponse->fail(ec);
+                            spCompletion->handler(ec, std::string());
                         else
                         {
-                            spResponse->dataReceived(bytes_transferred);
-                            io_service_.dispatch(Strand_.wrap([this]() {requestCompleted(); }));
+                            //spResponse->dataReceived(bytes_transferred);
+                            spCompletion->handler(ec, std::string(buf->data(), bytes_transferred));
+                            //io_service_.dispatch(Strand_.wrap([this]() {requestCompleted(); }));
                         }
                     });
                 }
-            } );
+            });
         }
 
     private:
         ConnectionManagerType Manager_;
-	};
-	
-	class SimpleConnectionManager 
-	{
-	public:
+    };
 
-		SimpleConnectionManager( const std::string& Servername="localhost", int Port=6379) :
-			Servername_(Servername),
-			Port_(Port)
-		{}
+    class SimpleConnectionManager
+    {
+    public:
 
-		boost::asio::ip::tcp::socket getConnectedSocket(boost::asio::io_service& io_service, boost::system::error_code& ec)
-		{
-			boost::asio::ip::tcp::socket Socket(io_service);
+        SimpleConnectionManager(const std::string& Servername = "localhost", int Port = 6379) :
+            Servername_(Servername),
+            Port_(Port)
+        {}
 
-			boost::asio::ip::tcp::resolver resolver(io_service);
-			boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
-			boost::asio::connect(Socket, resolver.resolve(query), ec);
+        boost::asio::ip::tcp::socket getConnectedSocket(boost::asio::io_service& io_service, boost::system::error_code& ec)
+        {
+            boost::asio::ip::tcp::socket Socket(io_service);
 
-			return Socket;
-		}
-		void async_getConnectedSocket(boost::asio::io_service& io_service, boost::function<void(const boost::system::error_code& ec, boost::asio::ip::tcp::socket& Socket)> SocketConnectedHandler)
-		{
-			std::shared_ptr<boost::asio::ip::tcp::resolver> spResolver = std::make_shared<boost::asio::ip::tcp::resolver>(io_service);
-			boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
-			spResolver->async_resolve(query, 
-                [&io_service, spResolver, SocketConnectedHandler] (const boost::system::error_code& error, boost::asio::ip::tcp::resolver::iterator iterator) {
+            boost::asio::ip::tcp::resolver resolver(io_service);
+            boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
+            boost::asio::connect(Socket, resolver.resolve(query), ec);
+
+            return Socket;
+        }
+
+        template <class	CompletionToken>
+        auto async_getConnectedSocket(boost::asio::io_service& io_service, BOOST_ASIO_MOVE_ARG(CompletionToken)	token)
+        {
+            typedef
+                boost::asio::detail::async_result_init<
+                CompletionToken,
+                void(const boost::system::error_code& ec, boost::asio::ip::tcp::socket& Socket)> t_completion;
+
+            auto spCompletion = std::make_shared<t_completion>(BOOST_ASIO_MOVE_CAST(CompletionToken)(token));
+
+            std::shared_ptr<boost::asio::ip::tcp::resolver> spResolver = std::make_shared<boost::asio::ip::tcp::resolver>(io_service);
+            boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
+            spResolver->async_resolve(query,
+                                      [&io_service, spResolver, spCompletion](boost::system::error_code error, boost::asio::ip::tcp::resolver::iterator iterator) {
                 if (error)
-                    SocketConnectedHandler(error, boost::asio::ip::tcp::socket(io_service));
+                    spCompletion->handler(error, boost::asio::ip::tcp::socket(io_service));
                 else
                 {
                     std::shared_ptr<boost::asio::ip::tcp::socket> spSocket = std::make_shared<boost::asio::ip::tcp::socket>(io_service);
                     boost::asio::async_connect(*spSocket, iterator,
-                        [spSocket, SocketConnectedHandler](const boost::system::error_code& error, boost::asio::ip::tcp::resolver::iterator iterator) {
-                        SocketConnectedHandler(error, *spSocket);
+                                               [spSocket, spCompletion](boost::system::error_code error, boost::asio::ip::tcp::resolver::iterator iterator) {
+                        spCompletion->handler(error, *spSocket);
                     }
                     );
                 }
             });
-		}
-	private:
-		std::string Servername_;
-		int Port_;
-	};
+
+            return spCompletion->result.get();
+        }
+    private:
+        std::string Servername_;
+        int Port_;
+    };
 }
 
-int main( int argc, char**argv)
+int main(int argc, char**argv)
 {
-	try
-	{
-#ifdef fff
-		boost::asio::io_service io_service;
+    try
+    {
+#ifdef _DEBUG
+        boost::asio::io_service io_service;
 
-		redis::SimpleConnectionManager scm;
+        redis::SimpleConnectionManager scm("something.de", 26379);
 
-		redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
+        redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
-		//boost::system::error_code ec;
-		//auto Result = con.command("PING", ec);
+        //boost::system::error_code ec;
+        //auto Result = con.command("PING", ec);
 
-		con.async_command("PING", [&con](auto ec, auto Data)
-		{
+        //// Callback Version
+        //con.async_command("PING", [&con](auto ec, auto Data)
+        //{
+        //    if (ec)
+        //        std::cerr << ec.message() << std::endl;
+        //    else
+        //        std::cerr << Data << std::endl;
+        //});
+
+        //// Futures Version
+        //boost::system::error_code ec;
+        //auto f = con.async_command("PING", boost::asio::use_future);
+        //f.wait();
+        //std::cerr << f.get() << std::endl;
+
+        // Coroutine
+        boost::asio::spawn(io_service,
+                           [&](boost::asio::yield_context yield)
+        {
+            boost::system::error_code ec;
+            //std::string Result = 
+            con.async_command("PING", yield[ec]);
+            //auto Data = con.async_command("PING", yield[ec]);
             if (ec)
                 std::cerr << ec.message() << std::endl;
-            else
-                std::cerr << Data << std::endl;
-		});
+            //else
+            //	std::cerr << Data << std::endl;
+        });
 
-		io_service.run();
+        //boost::asio::io_service::work work(io_service);
+        std::thread thread([&io_service]() { io_service.run(); });
+
+        //io_service.stop();
+        thread.join();
 #else
         redis::Response res(
             [](auto ec, auto Data)
@@ -334,10 +389,10 @@ int main( int argc, char**argv)
         bool MoreDataRequired = res.dataReceived(ResponseString.size());
         std::cerr << res.parts().begin()->get()->dump() << std::endl;
 #endif
-	}
-	catch (const std::exception& ex)
-	{
-		std::cerr << ex.what() << std::endl;
-	}
-	return 0;
-}
+    }
+    catch (const std::exception& ex)
+    {
+        std::cerr << ex.what() << std::endl;
+    }
+    return 0;
+    }

@@ -12,6 +12,8 @@
 
 #include <boost\asio.hpp>
 #include <boost\function.hpp>
+#include <boost/asio/spawn.hpp>
+#include <boost/asio/use_future.hpp>
 
 #include <memory>
 #include <iostream>
