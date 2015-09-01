@@ -1,3 +1,6 @@
+#ifndef REDIS_CONNECTION_INCLUDED
+#define REDIS_CONNECTION_INCLUDED
+
 namespace redis
 {
     class ConnectionBase : std::enable_shared_from_this<ConnectionBase>
@@ -117,3 +120,5 @@ namespace redis
         ConnectionManagerType Manager_;
     };
 }
+
+#endif

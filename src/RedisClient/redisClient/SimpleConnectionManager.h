@@ -1,3 +1,6 @@
+#ifndef REDIS_SIMPLECONNECTIONMANAGER_INCLUDED
+#define REDIS_SIMPLECONNECTIONMANAGER_INCLUDED
+
 namespace redis
 {
     class SimpleConnectionManager
@@ -54,3 +57,5 @@ namespace redis
         int Port_;
     };
 }
+
+#endif

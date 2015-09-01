@@ -1,17 +1,18 @@
 #include "stdafx.h"
 
 #include "redisClient\Response.h"
+#include "redisClient\Request.h"
 #include "redisClient\SimpleConnectionManager.h"
 #include "redisClient\Connection.h"
 
-#ifndef _DEBUG
+#ifndef _DEBUGd
 int main(int argc, char**argv)
 {
     try
     {
         boost::asio::io_service io_service;
 
-        redis::SimpleConnectionManager scm("bingo.de", 26379);
+        redis::SimpleConnectionManager scm("thishostdoesnotexist.de", 26379);
 
         redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
@@ -19,27 +20,27 @@ int main(int argc, char**argv)
         //auto Result = con.command("PING", ec);
 
         //// Callback Version
-        //con.async_command("PING", [&con](auto ec, auto Data)
-        //{
-        //    if (ec)
-        //        std::cerr << ec.message() << std::endl;
-        //    else
-        //        std::cerr << Data << std::endl;
-        //});
-        //std::thread thread([&io_service]() { io_service.run(); });
-        //thread.join();
+        con.async_command("PING", [&con](auto ec, auto Data)
+        {
+            if (ec)
+                std::cerr << ec.message() << std::endl;
+            else
+                std::cerr << Data << std::endl;
+        });
+        std::thread thread([&io_service]() { io_service.run(); });
+        thread.join();
 
         // Futures Version
-        boost::asio::io_service::work work(io_service);
-        std::thread thread([&io_service]() { io_service.run(); });
+        //boost::asio::io_service::work work(io_service);
+        //std::thread thread([&io_service]() { io_service.run(); });
 
-        boost::system::error_code ec;
-        auto f = con.async_command("PING", boost::asio::use_future);
-        f.wait();
-        std::cerr << f.get() << std::endl;
+        //boost::system::error_code ec;
+        //auto f = con.async_command("PING", boost::asio::use_future);
+        //f.wait();
+        //std::cerr << f.get() << std::endl;
 
-        io_service.stop();
-        thread.join();
+        //io_service.stop();
+        //thread.join();
 
         //// Coroutine
         //boost::asio::spawn(io_service,
@@ -106,8 +107,13 @@ bool testit_complete(const std::string& Teststring)
             return false;
         }
     }
+    Result = testit(Teststring, redis::Response::DefaultBuffersize);
+    if (!Result)
+    {
+        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::Response::DefaultBuffersize << std::endl;
+        return false;
+    }
     return Result;
-       
 }
 
 #define BOOST_TEST_MODULE Redis Client
@@ -124,4 +130,30 @@ BOOST_AUTO_TEST_CASE(Redis_Response_Parse_With_Different_Buffersizes)
     BOOST_TEST(testit_complete("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"));
     BOOST_TEST(testit_complete("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n"));
 }
+
+std::string bufferSequenceToString(const redis::Request::BufferSequence_t& BufferSequence)
+{
+    std::string Result;
+    for (const auto& SingleBuffer : BufferSequence)
+        Result += std::string(boost::asio::buffer_cast<const char*>(SingleBuffer), boost::asio::buffer_size(SingleBuffer));
+    return Result;
+}
+
+BOOST_AUTO_TEST_CASE(Redis_Request_Construction)
+{
+
+    redis::Request r("bingo");
+    std::string a("a");
+    std::string b("b");
+    std::string test("test");
+    redis::Request d(std::vector<boost::asio::const_buffer>{ boost::asio::buffer(a), boost::asio::buffer(b), boost::asio::buffer(test) });
+
+    BOOST_TEST(bufferSequenceToString(d.bufferSequence()) == "*3\r\n$1\r\na\r\n$1\r\nb\r\n$4\r\ntest\r\n");
+
+    redis::Request e("e", "f", std::string("jj"));
+    auto ee = e.bufferSequence();
+
+    BOOST_TEST(bufferSequenceToString(e.bufferSequence()) == "*3\r\n$1\r\ne\r\n$1\r\nf\r\n$2\r\njj\r\n");
+}
+
 #endif
