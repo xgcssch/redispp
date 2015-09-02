@@ -142,7 +142,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="redisClient\Commands.h" />
     <ClInclude Include="redisClient\Connection.h" />
+    <ClInclude Include="redisClient\Error.h" />
     <ClInclude Include="redisClient\Request.h" />
     <ClInclude Include="redisClient\Response.h" />
     <ClInclude Include="redisClient\SimpleConnectionManager.h" />

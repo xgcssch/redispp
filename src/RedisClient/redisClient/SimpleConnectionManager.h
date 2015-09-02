@@ -1,6 +1,9 @@
 #ifndef REDIS_SIMPLECONNECTIONMANAGER_INCLUDED
 #define REDIS_SIMPLECONNECTIONMANAGER_INCLUDED
 
+#include <string>
+#include <boost\asio.hpp>
+
 namespace redis
 {
     class SimpleConnectionManager

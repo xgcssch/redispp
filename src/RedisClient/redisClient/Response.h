@@ -1,125 +1,122 @@
+#ifndef REDIS_RESPONSE_INCLUDED
+#define REDIS_RESPONSE_INCLUDED
+
+#include <vector>
+#include <stack>
 #include <boost\array.hpp>
+#include <boost\asio.hpp>
 
 namespace redis
 {
-    class ResponsePart
+    class Response
     {
     public:
-        ResponsePart(const char* pData, size_t Length) :
+        typedef std::vector<std::shared_ptr<Response>> ElementContainer;
+        enum class Type { SimpleString, Error, Integer, BulkString, Null, Array };
+
+        Response(const Response&) = delete;
+        Response& operator=(const Response&) = delete;
+
+        Response() :
+            Type_(Type::Null),
+            pData_(nullptr),
+            Length_(0)
+        {
+        }
+
+        Response(Type PartType, const char* pData, size_t Length) :
+            Type_(PartType),
             pData_(pData),
             Length_(Length)
         {
         }
 
-        virtual std::string dump() const
-        {
-            return std::string(pData_, Length_);
-        }
-    private:
-        const char* pData_;
-        size_t Length_;
-    };
-
-    class ResponsePartSimpleString : public ResponsePart
-    {
-    public:
-        ResponsePartSimpleString(const char* pData, size_t Length) :
-            ResponsePart(pData, Length)
-        {}
-        std::string dump() const override
-        {
-            return "Simple:\"" + ResponsePart::dump() + "\"";
-        }
-    };
-
-    class ResponsePartError : public ResponsePart
-    {
-    public:
-        ResponsePartError(const char* pData, size_t Length) :
-            ResponsePart(pData, Length)
-        {}
-        std::string dump() const override
-        {
-            return "Error:\"" + ResponsePart::dump() + "\"";
-        }
-    };
-
-    class ResponsePartInteger : public ResponsePart
-    {
-    public:
-        ResponsePartInteger(const char* pData, size_t Length) :
-            ResponsePart(pData, Length)
-        {}
-        std::string dump() const override
-        {
-            return "Integer:\"" + ResponsePart::dump() + "\"";
-        }
-    };
-
-    class ResponsePartBulkString : public ResponsePart
-    {
-    public:
-        ResponsePartBulkString(const char* pData, size_t Length) :
-            ResponsePart(pData, Length)
-        {}
-        std::string dump() const override
-        {
-            return "Bulk:\"" + ResponsePart::dump() + "\"";
-        }
-    };
-
-    class ResponseNull : public ResponsePart
-    {
-    public:
-        ResponseNull() :
-            ResponsePart(nullptr, 0)
-        {}
-        std::string dump() const override
-        {
-            return "Null";
-        }
-    };
-
-    class ResponseArray : public ResponsePart
-    {
-    public:
-        ResponseArray(std::vector<std::shared_ptr<ResponsePart>>&& Elements) :
-            ResponsePart(nullptr, 0)
+        Response(ElementContainer&& Elements) :
+            Type_(Type::Array),
+            pData_(nullptr),
+            Length_(0)
         {
             Elements_ = std::move(Elements);
         }
-        std::string dump() const override
+
+        std::string dump() const
         {
-            std::string Result;
-            Result += "[" + std::to_string(Elements_.size()) + ": ";
-            for( const auto& Element : Elements_ )
-                Result += Element->dump() + ",";
-            Result += "]";
-            return Result;
+            switch (Type_)
+            {
+                case Type::SimpleString:
+                    return "Simple:\"" + string() + "\"";
+
+                case Type::Error:
+                    return "Error:\"" + string() + "\"";
+
+                case Type::Integer:
+                    return "Integer:\"" + string() + "\"";
+
+                case Type::BulkString:
+                    return "Bulkstring:\"" + string() + "\"";
+
+                case Type::Null:
+                    return "Null";
+
+                case Type::Array:
+                {
+                    std::string Result;
+                    Result += "[" + std::to_string(Elements_.size()) + ": ";
+                    for (const auto& Element : Elements_)
+                        Result += Element->dump() + ",";
+                    Result += "]";
+                    return Result;
+                }
+                default:
+                    return "Unknown";
+            }
         }
 
-        const std::vector<std::shared_ptr<ResponsePart>>& elements() const { return Elements_; }
-
+        Type type() const { return Type_; }
+        const char* data() const { return pData_; }
+        size_t size() const { return Length_; }
+        std::string string() const { return Length_?std::string(pData_, Length_):std::string(); }
+        const ElementContainer& elements() { return Elements_; }
     private:
-        std::vector<std::shared_ptr<ResponsePart>> Elements_;
+        Type Type_;
+        const char* pData_;
+        size_t Length_;
+        ElementContainer Elements_;
     };
 
-    class Response
+
+    class ResponseHandler
     {
     public:
-        typedef std::shared_ptr<Response> ResponseHandle;
+        typedef std::shared_ptr<ResponseHandler> ResponseHandle;
         typedef std::vector<char> InternalBufferType;
 
         static constexpr size_t DefaultBuffersize = 1024;
 
-        Response(size_t Buffersize = DefaultBuffersize) :
+        ResponseHandler(size_t Buffersize = DefaultBuffersize) :
             InitialBuffersize_(Buffersize)
         {
             reset();
         }
 
-        Response(const Response&) = delete;
-        Response& operator=(const Response&) = delete;
+        //ResponseHandler(ResponseHandler&& rhs)
+        //{
+        //    InternalBuffer_     = std::move(rhs.InternalBuffer_);
+        //    InitialBuffersize_  = rhs.InitialBuffersize_;
+        //    Buffersize_         = rhs.Buffersize_;
+        //    BufferContainer_    = std::move(rhs.BufferContainer_);
+        //    spTop_              = rhs.spTop_;
+
+        //    Partstack_          = std::move(rhs.Partstack_);
+        //    StartPosition_      = rhs.StartPosition_;
+        //    ParsePosition_      = rhs.ParsePosition_;
+        //    ValidBytesInBuffer_ = rhs.ValidBytesInBuffer_;
+        //    CRSeen_             = rhs.CRSeen_;
+        //    CRLFSeen_           = rhs.CRLFSeen_;
+        //}
+
+        ResponseHandler(const ResponseHandler&) = delete;
+        ResponseHandler& operator=(const ResponseHandler&) = delete;
 
         bool dataReceived(size_t BytesReceived)
         {
@@ -138,20 +135,20 @@ namespace redis
                     size_t Length = ValidBytesInBuffer_ - 2;
                     InternalBufferType::const_pointer pTopEntryEnd = pStart + Length;
 
-                    std::shared_ptr<ResponsePart> spPart;
+                    std::shared_ptr<Response> spPart;
 
                     switch (*pTopEntryStart)
                     {
                         case '+':
-                            spPart = std::make_shared<ResponsePartSimpleString>(pTopEntryStart + 1, Length);
+                            spPart = std::make_shared<Response>(Response::Type::SimpleString, pTopEntryStart + 1, Length);
                             break;
 
                         case '-':
-                            spPart = std::make_shared<ResponsePartError>(pTopEntryStart + 1, Length);
+                            spPart = std::make_shared<Response>(Response::Type::Error, pTopEntryStart + 1, Length);
                             break;
 
                         case ':':
-                            spPart = std::make_shared<ResponsePartInteger>(pTopEntryStart + 1, Length);
+                            spPart = std::make_shared<Response>(Response::Type::Integer, pTopEntryStart + 1, Length);
                             break;
 
                         case '$':
@@ -159,7 +156,7 @@ namespace redis
                             off_t ExpectedBytes = local_atoi(pTopEntryStart + 1);
                             if (ExpectedBytes == -1)
                             {
-                                spPart = std::make_shared<ResponseNull>();
+                                spPart = std::make_shared<Response>();
                                 break;
                             }
                             ExpectedBytes += 2;
@@ -168,7 +165,7 @@ namespace redis
                             if (BytesInBuffer >= ExpectedBytes)
                             {
                                 // check \r\n
-                                spPart = std::make_shared<ResponsePartBulkString>(pStart + 1, ExpectedBytes - 2);
+                                spPart = std::make_shared<Response>(Response::Type::BulkString, pStart + 1, ExpectedBytes - 2);
                                 pStart += ExpectedBytes;
                                 ParsePosition_ += ExpectedBytes;
                                 break;
@@ -186,12 +183,12 @@ namespace redis
                             off_t Items = local_atoi(pTopEntryStart + 1);
                             if (Items == -1)
                             {
-                                spPart = std::make_shared<ResponseNull>();
+                                spPart = std::make_shared<Response>();
                                 break;
                             }
                             if (Items == 0)
                             {
-                                spPart = std::make_shared<ResponseArray>(std::vector<std::shared_ptr<ResponsePart>>{});
+                                spPart = std::make_shared<Response>(std::vector<std::shared_ptr<Response>>{});
                                 break;
                             }
 
@@ -235,7 +232,7 @@ namespace redis
                                     break;
                                 else
                                 {
-                                    spPart = std::make_shared<ResponseArray>(std::move(*TopEntry.spParts_) );
+                                    spPart = std::make_shared<Response>(std::move(*TopEntry.spParts_) );
                                 }
                             }
                         }
@@ -299,16 +296,16 @@ namespace redis
             ValidBytesInBuffer_ = 0;
         }
 
-        const ResponsePart& top() const { return *spTop_; }
+        const Response& top() const { return *spTop_; }
 
     private:
         struct ParseStackEntry {
-            std::shared_ptr<std::vector<std::shared_ptr<ResponsePart>>> spParts_;
+            std::shared_ptr<std::vector<std::shared_ptr<Response>>> spParts_;
             size_t CurrentEntry_ = 0;
             ParseStackEntry()
             {}
             ParseStackEntry(size_t Items) :
-                spParts_(std::make_shared<std::vector<std::shared_ptr<ResponsePart>>>(Items))
+                spParts_(std::make_shared<std::vector<std::shared_ptr<Response>>>(Items))
             {
             }
         };
@@ -317,7 +314,7 @@ namespace redis
         size_t InitialBuffersize_;
         size_t Buffersize_;
         std::list<InternalBufferType> BufferContainer_;
-        std::shared_ptr<ResponsePart> spTop_;
+        std::shared_ptr<Response> spTop_;
 
         std::stack<ParseStackEntry> Partstack_;
         InternalBufferType::size_type StartPosition_;
@@ -358,3 +355,5 @@ namespace redis
         }
     };
 }
+
+#endif

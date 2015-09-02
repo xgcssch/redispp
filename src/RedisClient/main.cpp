@@ -4,31 +4,97 @@
 #include "redisClient\Request.h"
 #include "redisClient\SimpleConnectionManager.h"
 #include "redisClient\Connection.h"
+#include "redisClient\Error.h"
+#include "redisClient\Commands.h"
 
 #ifndef _DEBUGd
+
+namespace redis
+{
+    Request prepareRequest_ping()
+    {
+        return Request("PING");
+    }
+
+    auto processResult_ping( const Response& Data )
+    {
+        if (Data.type() == Response::Type::SimpleString && Data.string() == "PONG")
+            return std::make_tuple<boost::system::error_code>(boost::system::error_code());
+        else
+            return std::make_tuple<boost::system::error_code>(::redis::make_error_code(ErrorCodes::protocol_error));
+    }
+
+    template <class Connection>
+    auto ping(Connection& con)
+    {
+        boost::system::error_code ec;
+        auto theResponse = con.command(prepareRequest_ping(), ec);
+        if (ec)
+            return ec;
+        return std::get<0>(processResult_ping(theResponse->top()));
+    }
+
+    template <class Connection, class CompletionToken>
+    auto async_ping(Connection& con, CompletionToken&& token)
+    {
+        using handler_type = typename boost::asio::handler_type<CompletionToken,
+            void(boost::system::error_code)>::type;
+        handler_type handler(std::forward<decltype(token)>(token));
+        boost::asio::async_result<decltype(handler)> result(handler);
+
+        auto spRequest = std::make_shared<Request>(prepareRequest_ping());
+
+        con.async_command(*spRequest, [&con, spRequest, handler](auto ec, auto Data)
+        {
+            if (ec)
+                handler(ec);
+            else
+            {
+                auto Result = processResult_ping(Data);
+                handler(std::get<0>(Result));
+            }
+        });
+
+        return result.get();
+    }
+}
+
 int main(int argc, char**argv)
 {
     try
     {
         boost::asio::io_service io_service;
 
-        redis::SimpleConnectionManager scm("thishostdoesnotexist.de", 26379);
+        redis::SimpleConnectionManager scm("thissitedoesnotexist.de", 26379);
 
         redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
-        //boost::system::error_code ec;
-        //auto Result = con.command("PING", ec);
+        //std::thread thread([&io_service]() { io_service.run(); });
+        boost::system::error_code ec = redis::ping(con);
+        //thread.join();
 
-        //// Callback Version
-        con.async_command("PING", [&con](auto ec, auto Data)
-        {
-            if (ec)
-                std::cerr << ec.message() << std::endl;
-            else
-                std::cerr << Data << std::endl;
-        });
-        std::thread thread([&io_service]() { io_service.run(); });
-        thread.join();
+        // Callback Version
+        //con.async_command(r, [&con](auto ec, auto Data)
+        //{
+        //    if (ec)
+        //        std::cerr << ec.message() << std::endl;
+        //    else
+        //    {
+        //        std::cerr << Data.dump() << std::endl;
+        //    }
+        //});
+
+        //redis::async_ping( con, [](auto ec)
+        //{
+        //    if (ec)
+        //        std::cerr << ec.message() << std::endl;
+        //    else
+        //    {
+        //        std::cerr << "Ping OK" << std::endl;
+        //    }
+        //});
+        //std::thread thread([&io_service]() { io_service.run(); });
+        //thread.join();
 
         // Futures Version
         //boost::asio::io_service::work work(io_service);
@@ -47,13 +113,12 @@ int main(int argc, char**argv)
         //                   [&](boost::asio::yield_context yield)
         //{
         //    boost::system::error_code ec;
-        //    auto Data = con.async_command("PING", yield[ec]);
+        //    auto Data = con.async_command(r, yield[ec]);
         //    if (ec)
         //        std::cerr << ec.message() << std::endl;
         //    else
-        //    	std::cerr << Data << std::endl;
+        //    	std::cerr << Data.dump() << std::endl;
         //});
-
         //std::thread thread([&io_service]() { io_service.run(); });
         //thread.join();
     }
@@ -67,7 +132,7 @@ int main(int argc, char**argv)
 #else
 bool testit(const std::string& Teststring, size_t Buffersize=1024)
 {
-    redis::Response res(Buffersize);
+    redis::ResponseHandler res(Buffersize);
 
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
@@ -107,10 +172,10 @@ bool testit_complete(const std::string& Teststring)
             return false;
         }
     }
-    Result = testit(Teststring, redis::Response::DefaultBuffersize);
+    Result = testit(Teststring, redis::ResponseHandler::DefaultBuffersize);
     if (!Result)
     {
-        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::Response::DefaultBuffersize << std::endl;
+        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler::DefaultBuffersize << std::endl;
         return false;
     }
     return Result;

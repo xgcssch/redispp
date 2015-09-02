@@ -1,6 +1,10 @@
 #ifndef REDIS_REQUEST_INCLUDED
 #define REDIS_REQUEST_INCLUDED
 
+#include <vector>
+#include <string>
+#include <boost\asio\buffer.hpp>
+
 namespace redis
 {
     class Request
@@ -12,7 +16,7 @@ namespace redis
         Request& operator=(const Request&) = delete;
 
         template<typename... Ts>
-        Request(Ts... args)
+        explicit Request(Ts... args)
         {
             Strings_.emplace_back(pCRLF_);
             const int size = sizeof...(args);
@@ -26,13 +30,20 @@ namespace redis
             }
             construct(std::move(Arguments));
         }
-        Request(BufferSequence_t&& Arguments)
+        explicit Request(BufferSequence_t&& Arguments)
         {
             Strings_.emplace_back(pCRLF_);
             construct(std::move(Arguments));
         }
 
-        const BufferSequence_t& bufferSequence()
+        Request(Request&& rhs)
+        {
+            Components_ = std::move(rhs.Components_);
+            Arraycount_ = std::move(rhs.Arraycount_);
+            Strings_ = std::move(rhs.Strings_);
+        }
+
+        const BufferSequence_t& bufferSequence() const
         {
             Arraycount_ = std::string("*") + std::to_string((Components_.size() - 1) / 3) + Strings_.front();
             Components_[0] = boost::asio::buffer(Arraycount_);
@@ -40,8 +51,8 @@ namespace redis
         }
 
     private:
-        BufferSequence_t Components_;
-        std::string Arraycount_;
+        mutable BufferSequence_t Components_;
+        mutable std::string Arraycount_;
         std::list<std::string> Strings_;
 
         static constexpr const char* pCRLF_ = "\r\n";
