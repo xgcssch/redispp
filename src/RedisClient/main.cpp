@@ -16,22 +16,18 @@ namespace redis
         return Request("PING");
     }
 
-    auto processResult_ping( const Response& Data )
+    auto processResult_ping(const Response& Data, boost::system::error_code& ec)
     {
-        if (Data.type() == Response::Type::SimpleString && Data.string() == "PONG")
-            return std::make_tuple<boost::system::error_code>(boost::system::error_code());
-        else
-            return std::make_tuple<boost::system::error_code>(::redis::make_error_code(ErrorCodes::protocol_error));
+        if (Data.type() != Response::Type::SimpleString || Data.string() != "PONG")
+            ec = ::redis::make_error_code(ErrorCodes::protocol_error);
     }
 
     template <class Connection>
-    auto ping(Connection& con)
+    auto ping(Connection& con, boost::system::error_code& ec)
     {
-        boost::system::error_code ec;
         auto theResponse = con.command(prepareRequest_ping(), ec);
-        if (ec)
-            return ec;
-        return std::get<0>(processResult_ping(theResponse->top()));
+        if (!ec)
+            processResult_ping(theResponse->top(), ec);
     }
 
     template <class Connection, class CompletionToken>
@@ -44,19 +40,83 @@ namespace redis
 
         auto spRequest = std::make_shared<Request>(prepareRequest_ping());
 
-        con.async_command(*spRequest, [&con, spRequest, handler](auto ec, auto Data)
+        con.async_command(*spRequest, [&con, spRequest, handler](auto ec, const auto& Data)
         {
             if (ec)
                 handler(ec);
             else
             {
-                auto Result = processResult_ping(Data);
-                handler(std::get<0>(Result));
+                processResult_ping(Data,ec);
+                handler(ec);
             }
         });
 
         return result.get();
     }
+
+    template <class T1_, class T2_>
+    Request prepareRequest_set(T1_ Key, T2_ Value, size_t ExpireTimeInMilliseconds, bool SetIfNotExist, bool SetIfExist)
+    {
+        Request r("SET");
+        r << Key << Value;
+        if (ExpireTimeInMilliseconds)
+            r << "PX" << ExpireTimeInMilliseconds;
+        if (SetIfNotExist)
+            r << "NX";
+        if (SetIfExist)
+            r << "XX";
+        return r;
+    }
+
+    auto processResult_set(const Response& Data, boost::system::error_code& ec)
+    {
+        if (Data.type() == Response::Type::SimpleString && Data.string() == "OK")
+            return true;
+        else
+            if (Data.type() == Response::Type::Null )
+                return false;
+            else
+            {
+                ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+                return false;
+            }
+    }
+
+    template <class Connection, class T1_, class T2_>
+    auto set(Connection& con, boost::system::error_code& ec, T1_ Key, T2_ Value, size_t ExpireTimeInMilliseconds = 0, bool SetIfNotExist = false, bool SetIfExist = false)
+    {
+        auto theResponse = con.command(prepareRequest_set(Key, Value, ExpireTimeInMilliseconds, SetIfNotExist, SetIfExist), ec);
+        if (ec)
+            return false;
+
+        return processResult_set(theResponse->top(), ec);
+    }
+
+    template <class Connection, class CompletionToken, class T1_, class T2_, class R_=bool>
+    auto async_set(Connection& con, CompletionToken&& token, T1_ Key, T2_ Value, size_t ExpireTimeInMilliseconds = 0, bool SetIfNotExist = false, bool SetIfExist = false)
+    {
+        using handler_type = typename boost::asio::handler_type<CompletionToken,
+            void(boost::system::error_code, R_)>::type;
+        handler_type handler(std::forward<decltype(token)>(token));
+        boost::asio::async_result<decltype(handler)> result(handler);
+
+        auto spRequest = std::make_shared<Request>(prepareRequest_set(Key, Value, ExpireTimeInMilliseconds, SetIfNotExist, SetIfExist));
+
+        con.async_command(*spRequest, [&con, spRequest, handler](auto ec, const auto& Data)
+        {
+            if (ec)
+                handler(ec,R_());
+            else
+            {
+                auto Result = processResult_set(Data, ec);
+                handler(ec, Result);
+            }
+        });
+
+        return result.get();
+    }
+
+
 }
 
 int main(int argc, char**argv)
@@ -65,13 +125,15 @@ int main(int argc, char**argv)
     {
         boost::asio::io_service io_service;
 
-        redis::SimpleConnectionManager scm("thissitedoesnotexist.de", 26379);
-
+        //redis::SimpleConnectionManager scm("hgf-vb-vg-857.int.alte-leipziger.de", 26379);
+        redis::SimpleConnectionManager scm("148.251.71.44", 6379);
+        
         redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
-        //std::thread thread([&io_service]() { io_service.run(); });
-        boost::system::error_code ec = redis::ping(con);
-        //thread.join();
+        /// Syncronous Version
+        //boost::system::error_code ec;
+        //redis::ping(con, ec);
+        //bool setok = redis::set(con, ec, "ein", "test");
 
         // Callback Version
         //con.async_command(r, [&con](auto ec, auto Data)
@@ -83,6 +145,18 @@ int main(int argc, char**argv)
         //        std::cerr << Data.dump() << std::endl;
         //    }
         //});
+
+        redis::async_set( con, [](auto ec, bool setok)
+        {
+            if (ec)
+                std::cerr << ec.message() << std::endl;
+            else
+            {
+                std::cerr << "set " << setok << std::endl;
+            }
+        }, "ein", "test");
+        std::thread thread([&io_service]() { io_service.run(); });
+        thread.join();
 
         //redis::async_ping( con, [](auto ec)
         //{

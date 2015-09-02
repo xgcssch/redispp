@@ -19,6 +19,7 @@ namespace redis
         explicit Request(Ts... args)
         {
             Strings_.emplace_back(pCRLF_);
+
             const int size = sizeof...(args);
             std::string res[size] = { args... };
             BufferSequence_t Arguments(size);
@@ -43,6 +44,32 @@ namespace redis
             Strings_ = std::move(rhs.Strings_);
         }
 
+        Request& operator<<(const std::string& Value)
+        {
+            Strings_.emplace_back("$" + std::to_string(Value.size()) + Strings_.front());
+            Components_.push_back(boost::asio::buffer(Strings_.back()));
+            Strings_.push_back(Value);
+            Components_.push_back(boost::asio::buffer(Strings_.back()));
+            Components_.push_back(boost::asio::buffer(Strings_.front()));
+
+            return *this;
+        }
+
+        Request& operator<<(size_t Value)
+        {
+            return this->operator<<(std::to_string(Value));
+        }
+
+        Request& operator<<(const boost::asio::const_buffer& Value)
+        {
+            Strings_.emplace_back("$" + std::to_string(boost::asio::buffer_size(Value)) + Strings_.front());
+            Components_.push_back(boost::asio::buffer(Strings_.back()));
+            Components_.push_back(boost::asio::buffer(Value));
+            Components_.push_back(boost::asio::buffer(Strings_.front()));
+
+            return *this;
+        }
+
         const BufferSequence_t& bufferSequence() const
         {
             Arraycount_ = std::string("*") + std::to_string((Components_.size() - 1) / 3) + Strings_.front();
@@ -62,7 +89,7 @@ namespace redis
             Components_ = std::move(Arguments);
 
             size_t Argumentcount = Components_.size();
-            Components_.reserve(Argumentcount * 5 + 1);
+            Components_.reserve(30);
             Components_.resize(Argumentcount * 3 + 1);
             for (size_t Index = Argumentcount; Index > 0;--Index)
             {

@@ -86,7 +86,9 @@ namespace redis
                 Manager_.async_getConnectedSocket(io_service_,
                                                   [this, &Command, handler](boost::system::error_code ec, boost::asio::ip::tcp::socket& Socket) mutable {
                     if (ec)
-                        return handler(ec, Response());
+                    {
+                        handler(ec, Response());
+                    }
                     else
                     {
                         Socket_ = std::move(Socket);
