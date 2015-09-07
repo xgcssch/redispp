@@ -55,7 +55,12 @@ namespace redis
             return *this;
         }
 
-        Request& operator<<(size_t Value)
+        Request& operator<<(int64_t Value)
+        {
+            return this->operator<<(std::to_string(Value));
+        }
+
+        Request& operator<<(int32_t Value)
         {
             return this->operator<<(std::to_string(Value));
         }

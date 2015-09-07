@@ -5,6 +5,11 @@ VisualStudioVersion = 14.0.23107.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RedisClient", "RedisClient.vcxproj", "{469DBB9E-8BA0-4A3F-AD85-1DC84F01D15C}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{9F966A34-6A65-422F-ADA1-2E8DE0E0B398}"
+	ProjectSection(SolutionItems) = preProject
+		Boost_1.59.props = Boost_1.59.props
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
