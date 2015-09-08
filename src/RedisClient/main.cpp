@@ -7,25 +7,86 @@
 #include "redisClient\Error.h"
 #include "redisClient\Commands.h"
 
-#include <chrono>
+#ifndef _DEBUGf
 
-#ifndef _DEBUGd
+#include <time.h>
+#include <string.h>
+
+namespace po = boost::program_options;
 
 int main(int argc, char**argv)
 {
+    std::string             Hostname;
+    int                     Port;
+
     try
     {
+        po::options_description CommandlineOptionsDescription("Usage: redisclient [OPTIONS]");
+        CommandlineOptionsDescription.add_options()
+            ("help",                                                                                "Output this text and exit")
+            ("hostname,h",      po::value<std::string>(&Hostname)->default_value("127.0.0.1"),      "Server hostname (default: 127.0.0.1).")
+            ("port,p",          po::value<int>(&Port)->default_value(6379),                         "Server port (default: 6379).")
+            ;
+
+        po::variables_map CommandlineOptions;
+        po::store(po::command_line_parser(argc, argv)
+                  .options(CommandlineOptionsDescription)
+                  .run(),
+                  CommandlineOptions);
+
+        po::notify(CommandlineOptions);
+
+        if (CommandlineOptions.count("help"))
+        {
+            std::cerr << CommandlineOptionsDescription << std::endl;
+            return 8;
+        }
+
         boost::asio::io_service io_service;
 
-        //redis::SimpleConnectionManager scm("hgf-vb-vg-857.int.alte-leipziger.de", 26379);
-        redis::SimpleConnectionManager scm("148.251.71.44", 6379);
+        redis::SimpleConnectionManager scm(Hostname, Port);
+        //redis::SimpleConnectionManager scm("localhost", 6379);
+        //redis::SimpleConnectionManager scm("hgf-vb-vg-857.int.alte-leipziger.de", 6379);
 
         redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
 
-        /// Synchronous Version
         boost::system::error_code ec;
-        redis::ping(con, ec);
+        auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");
+        if (ec)
+            std::cerr << ec.message() << std::endl;
+        auto yy = redis::sentinel_sentinels(con, ec, "almaster");
+        if (ec)
+            std::cerr << ec.message() << std::endl;
+
+        /// Synchronous Version
+#ifdef sdfasdf
+        std::string Keyname("simple_loop:count");
+        boost::system::error_code ec;
+        redis::set(con, ec, Keyname, "0");
+
+        std::chrono::time_point<std::chrono::system_clock> start, end;
+        start = std::chrono::system_clock::now();
+        end = start + std::chrono::seconds(5);
+
+        size_t Count = 0;
+        while (std::chrono::system_clock::now() < end)
+        {
+            redis::incr(con, ec, Keyname);
+            ++Count;
+        }
+
+        std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
+        double actual_freq = (double)Count / elapsed_seconds.count();
+
+        std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+
+        std::cout << "finished computation elapsed time: " << elapsed_seconds.count() << "s\n"
+            << actual_freq << "req/s\n";
+
+        auto xx = redis::get(con, ec, Keyname);
+        std::cout << "Final value of counter: " << std::string(boost::asio::buffer_cast<const char*>(xx.value()), boost::asio::buffer_size(xx.value())) << "\n";
         bool setok = redis::set(con, ec, "ein", "test");
+#endif
 
         // Callback Version
         //con.async_command(r, [&con](auto ec, auto Data)
@@ -96,10 +157,9 @@ int main(int argc, char**argv)
 }
 
 #else
-bool testit(const std::string& Teststring, size_t Buffersize = 1024)
+template<typename HandlerType>
+bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler )
 {
-    redis::ResponseHandler res(Buffersize);
-
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
     size_t RemainingBytes = InputBufferSize;
@@ -108,6 +168,7 @@ bool testit(const std::string& Teststring, size_t Buffersize = 1024)
     //std::cerr << "Test: '" << Teststring << "'" << std::endl;
 
     bool ParseCompleted = false;
+    int ParseId = 0;
     while (InputBufferSize > ConsumedBytes)
     {
         boost::asio::mutable_buffer ResponseBuffer = res.buffer();
@@ -118,6 +179,16 @@ bool testit(const std::string& Teststring, size_t Buffersize = 1024)
         RemainingBytes -= BytesToCopy;
 
         ParseCompleted = res.dataReceived(BytesToCopy);
+
+        if (ParseCompleted)
+        {
+            do
+            {
+                if (!handler(++ParseId, res.top()))
+                    return false;
+                //std::cerr << res.top().dump() << std::endl;
+            } while (res.commit());
+        }
     }
 
     //if (ParseCompleted)
@@ -126,19 +197,20 @@ bool testit(const std::string& Teststring, size_t Buffersize = 1024)
     return ParseCompleted;
 }
 
-bool testit_complete(const std::string& Teststring)
+template<typename HandlerType>
+bool testit_complete(const std::string& Teststring, HandlerType&& handler)
 {
     bool Result = true;
     for (size_t Buffersize = 1; Buffersize <= Teststring.size(); ++Buffersize)
     {
-        Result = testit(Teststring, Buffersize);
+        Result = testit(Teststring, redis::ResponseHandler(Buffersize), handler);
         if (!Result)
         {
             std::cerr << "Failure at test " << Teststring << " Buffersize: " << Buffersize << std::endl;
             return false;
         }
     }
-    Result = testit(Teststring, redis::ResponseHandler::DefaultBuffersize);
+    Result = testit(Teststring, redis::ResponseHandler(), handler);
     if (!Result)
     {
         std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler::DefaultBuffersize << std::endl;
@@ -150,16 +222,99 @@ bool testit_complete(const std::string& Teststring)
 #define BOOST_TEST_MODULE Redis Client
 #include <boost/test/included/unit_test.hpp>
 
+auto static good = [](auto ParseId,const auto& myresult) { return true;};
+
+BOOST_AUTO_TEST_CASE(Redis_Response_Parse_Multiple_Responses_Default_Buffersize)
+{
+    std::string test1("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n");
+
+    redis::ResponseHandler rh;
+
+    testit(test1, rh, 
+           [](auto ParseId, const auto& myresult) 
+    {
+        switch (ParseId)
+        {
+            case 1:
+                BOOST_TEST(myresult.type() == redis::Response::Type::Array);
+                BOOST_TEST(myresult.elements().size() == 3);
+                BOOST_TEST(myresult[0].type() == redis::Response::Type::BulkString);
+                BOOST_TEST(myresult[0].string() == "subscribe");
+                BOOST_TEST(myresult[1].type() == redis::Response::Type::BulkString);
+                BOOST_TEST(myresult[1].string() == "first");
+                BOOST_TEST(myresult[2].type() == redis::Response::Type::Integer);
+                BOOST_TEST(myresult[2].string() == "1");
+                break;
+            case 2:
+                BOOST_TEST(myresult.type() == redis::Response::Type::Array);
+                BOOST_TEST(myresult.elements().size() == 3);
+                BOOST_TEST(myresult[0].type() == redis::Response::Type::BulkString);
+                BOOST_TEST(myresult[0].string() == "subscribe");
+                BOOST_TEST(myresult[1].type() == redis::Response::Type::BulkString);
+                BOOST_TEST(myresult[1].string() == "second");
+                BOOST_TEST(myresult[2].type() == redis::Response::Type::Integer);
+                BOOST_TEST(myresult[2].string() == "2");
+                break;
+            default:
+                BOOST_TEST(false);
+        }
+        return true;
+    }
+    );
+}
+
+BOOST_AUTO_TEST_CASE(Redis_Response_Parse_Multiple_Responses_Different_Buffersize)
+{
+    std::string test1("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n");
+
+    for (size_t Buffersize = 1; Buffersize < test1.size();++Buffersize)
+    {
+        redis::ResponseHandler rh(Buffersize);
+
+        testit(test1, rh,
+               [](auto ParseId, const auto& myresult)
+        {
+            switch (ParseId)
+            {
+                case 1:
+                    BOOST_TEST(myresult.type() == redis::Response::Type::Array);
+                    BOOST_TEST(myresult.elements().size() == 3);
+                    BOOST_TEST(myresult[0].type() == redis::Response::Type::BulkString);
+                    BOOST_TEST(myresult[0].string() == "subscribe");
+                    BOOST_TEST(myresult[1].type() == redis::Response::Type::BulkString);
+                    BOOST_TEST(myresult[1].string() == "first");
+                    BOOST_TEST(myresult[2].type() == redis::Response::Type::Integer);
+                    BOOST_TEST(myresult[2].string() == "1");
+                    break;
+                case 2:
+                    BOOST_TEST(myresult.type() == redis::Response::Type::Array);
+                    BOOST_TEST(myresult.elements().size() == 3);
+                    BOOST_TEST(myresult[0].type() == redis::Response::Type::BulkString);
+                    BOOST_TEST(myresult[0].string() == "subscribe");
+                    BOOST_TEST(myresult[1].type() == redis::Response::Type::BulkString);
+                    BOOST_TEST(myresult[1].string() == "second");
+                    BOOST_TEST(myresult[2].type() == redis::Response::Type::Integer);
+                    BOOST_TEST(myresult[2].string() == "2");
+                    break;
+                default:
+                    BOOST_TEST(false);
+            }
+            return true;
+        }
+        );
+    }
+}
+
 BOOST_AUTO_TEST_CASE(Redis_Response_Parse_With_Different_Buffersizes)
 {
-    BOOST_TEST(testit_complete("+PONG\r\n"));
-    BOOST_TEST(testit_complete("-Error message\r\n"));
-    BOOST_TEST(testit_complete(":1000\r\n"));
-    BOOST_TEST(testit_complete("$6\r\nfoobar\r\n"));
-    BOOST_TEST(testit_complete("$-1\r\n"));
-    BOOST_TEST(testit_complete("*-1\r\n"));
-    BOOST_TEST(testit_complete("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"));
-    BOOST_TEST(testit_complete("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n"));
+    BOOST_TEST(testit_complete("+PONG\r\n", good));
+    BOOST_TEST(testit_complete("-Error message\r\n", good));
+    BOOST_TEST(testit_complete(":1000\r\n", good));
+    BOOST_TEST(testit_complete("$6\r\nfoobar\r\n", good));
+    BOOST_TEST(testit_complete("$-1\r\n", good));
+    BOOST_TEST(testit_complete("*-1\r\n", good));
+    BOOST_TEST(testit_complete("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", good));
+    BOOST_TEST(testit_complete("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n", good));
 }
 
 std::string bufferSequenceToString(const redis::Request::BufferSequence_t& BufferSequence)

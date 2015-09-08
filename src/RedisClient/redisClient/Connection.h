@@ -32,6 +32,7 @@ namespace redis
         boost::asio::io_service::strand Strand_;
         boost::asio::ip::tcp::socket Socket_;
         std::queue<ResponseHandler::ResponseHandle> _ResponseQueue;
+        bool Subscribed_ = false;
     };
 
     template <class ConnectionManagerType>

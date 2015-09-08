@@ -76,7 +76,8 @@ namespace redis
         const char* data() const { return pData_; }
         size_t size() const { return Length_; }
         std::string string() const { return Length_?std::string(pData_, Length_):std::string(); }
-        const ElementContainer& elements() { return Elements_; }
+        const ElementContainer& elements() const { return Elements_; }
+        const ElementContainer::value_type::element_type& operator[]( size_t Index ) const { return *Elements_.operator[](Index); }
     private:
         Type Type_;
         const char* pData_;
@@ -84,6 +85,31 @@ namespace redis
         ElementContainer Elements_;
     };
 
+    std::ostream& operator<<(std::ostream &os, const Response::Type& r)
+    {
+        switch (r) 
+        {
+            case Response::Type::SimpleString:
+                return os << "SimpleString";
+            case Response::Type::Error:
+                return os << "Error";
+            case Response::Type::Integer:
+                return os << "Integer";
+            case Response::Type::BulkString:
+                return os << "BulkString";
+            case Response::Type::Null:
+                return os << "Null";
+            case Response::Type::Array:
+                return os << "Array";
+            default:
+                return os;
+        };
+    }
+
+    std::ostream& operator<<(std::ostream &os, const Response& r)
+    {
+        return os << r.dump();
+    }
 
     class ResponseHandler
     {
@@ -96,24 +122,10 @@ namespace redis
         ResponseHandler(size_t Buffersize = DefaultBuffersize) :
             InitialBuffersize_(Buffersize)
         {
+            BufferContainer_.emplace_back(Buffersize);
+
             reset();
         }
-
-        //ResponseHandler(ResponseHandler&& rhs)
-        //{
-        //    InternalBuffer_     = std::move(rhs.InternalBuffer_);
-        //    InitialBuffersize_  = rhs.InitialBuffersize_;
-        //    Buffersize_         = rhs.Buffersize_;
-        //    BufferContainer_    = std::move(rhs.BufferContainer_);
-        //    spTop_              = rhs.spTop_;
-
-        //    Partstack_          = std::move(rhs.Partstack_);
-        //    StartPosition_      = rhs.StartPosition_;
-        //    ParsePosition_      = rhs.ParsePosition_;
-        //    ValidBytesInBuffer_ = rhs.ValidBytesInBuffer_;
-        //    CRSeen_             = rhs.CRSeen_;
-        //    CRLFSeen_           = rhs.CRLFSeen_;
-        //}
 
         ResponseHandler(const ResponseHandler&) = delete;
         ResponseHandler& operator=(const ResponseHandler&) = delete;
@@ -121,18 +133,23 @@ namespace redis
         bool dataReceived(size_t BytesReceived)
         {
             boost::asio::mutable_buffer CurrentBuffer = raw_buffer();
-            BytesReceived = std::min(boost::asio::buffer_size(CurrentBuffer), BytesReceived);
-            InternalBufferType::const_pointer pStart = boost::asio::buffer_cast<char*>(CurrentBuffer) + ParsePosition_;
-            InternalBufferType::const_pointer pEnd = boost::asio::buffer_cast<char*>(CurrentBuffer) + ValidBytesInBuffer_ + BytesReceived;
+
+            size_t BuffersizeRemaining = boost::asio::buffer_size(CurrentBuffer) - UnparsedBytesInBuffer_;
+            if (BytesReceived > BuffersizeRemaining)
+                BytesReceived = BuffersizeRemaining;
+
+            InternalBufferType::const_pointer pStart = boost::asio::buffer_cast<char*>(CurrentBuffer) + Offset_ + ParsePosition_;
+            InternalBufferType::const_pointer pEnd = boost::asio::buffer_cast<char*>(CurrentBuffer) + Offset_ + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + BytesReceived;
 
             size_t BytesToExpect = 2;
 
-            for (; pStart < pEnd; ++pStart, ++ParsePosition_, ++ValidBytesInBuffer_)
+            bool ToplevelFinished = false;
+            for (; pStart < pEnd && !ToplevelFinished; ++pStart, ++ParsePosition_, ++ParsedBytesInBuffer_)
             {
                 if (CRSeen_ && *pStart == '\n')
                 {
-                    InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + StartPosition_;
-                    size_t Length = ValidBytesInBuffer_ - 2;
+                    InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + Offset_ + StartPosition_;
+                    size_t Length = ParsedBytesInBuffer_ - 2;
                     InternalBufferType::const_pointer pTopEntryEnd = pStart + Length;
 
                     std::shared_ptr<Response> spPart;
@@ -173,7 +190,7 @@ namespace redis
 
                             BytesToExpect = ExpectedBytes - BytesInBuffer;
                             pStart += BytesInBuffer;
-                            ValidBytesInBuffer_ += BytesInBuffer;
+                            ParsedBytesInBuffer_ += BytesInBuffer;
                             ParsePosition_--;
                             break;
                         }
@@ -192,11 +209,9 @@ namespace redis
                                 break;
                             }
 
-                            ++StartPosition_;
-
                             CRSeen_ = false;
                             CRLFSeen_ = true;
-                            ValidBytesInBuffer_ = -1;
+                            ParsedBytesInBuffer_ = -1;
 
                             Partstack_.emplace(Items);
 
@@ -212,7 +227,7 @@ namespace redis
                     {
                         CRSeen_ = false;
                         CRLFSeen_ = true;
-                        ValidBytesInBuffer_ = -1;
+                        ParsedBytesInBuffer_ = -1;
 
                         while(!Partstack_.empty())
                         {
@@ -221,6 +236,7 @@ namespace redis
                             if (Partstack_.empty())
                             {
                                 spTop_ = spPart;
+                                ToplevelFinished = true;
                                 break;
                             }
 
@@ -255,21 +271,24 @@ namespace redis
 
             bool FinishedParsing = Partstack_.empty() && CRLFSeen_;
 
+            UnparsedBytesInBuffer_ = pEnd - pStart;
+
             if (!FinishedParsing)
             {
                 auto& TopEntry = Partstack_.top();
-                InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + StartPosition_;
+                InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + Offset_ + StartPosition_;
 
                 Buffersize_ *= 2;
-                size_t MinimumRequiredBuffersize = std::max(BytesToExpect + ValidBytesInBuffer_, Buffersize_);
+                size_t MinimumRequiredBuffersize = std::max(BytesToExpect + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_, Buffersize_);
                 BufferContainer_.emplace_back(MinimumRequiredBuffersize);
 
-                memcpy(raw_buffer_pointer(), pTopEntryStart, ValidBytesInBuffer_);
-                if (ValidBytesInBuffer_)
+                memcpy(raw_buffer_pointer(), pTopEntryStart, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_);
+                if (ParsedBytesInBuffer_)
                     ParsePosition_ -= StartPosition_;
                 else
                     ParsePosition_ = 0;
 
+                Offset_ = 0;
                 StartPosition_ = 0;
             }
 
@@ -277,23 +296,34 @@ namespace redis
         }
 
         boost::asio::mutable_buffer buffer() {
-            return raw_buffer() + ValidBytesInBuffer_;
+            return raw_buffer() + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_;
+        }
+
+        bool commit()
+        {
+            // Simple case: No valid data in buffer
+            if (!UnparsedBytesInBuffer_)
+            {
+                reset();
+                return false;
+            }
+            // Still Data available...
+
+            // Free surplus Buffers
+            resetBuffers();
+
+            spTop_.reset();
+            Offset_ += ParsePosition_;
+            ParsePosition_ = 0;
+
+            return dataReceived(0);
         }
 
         void reset()
         {
-            Buffersize_ = InitialBuffersize_;
-            spTop_.reset();
-            BufferContainer_.clear();
-            if (Buffersize_ != DefaultBuffersize)
-                BufferContainer_.emplace_back(Buffersize_);
-            while (!Partstack_.empty())
-                Partstack_.pop();
-            CRSeen_ = false;
-            CRLFSeen_ = true;
-            ParsePosition_ = 0;
-            StartPosition_ = 0;
-            ValidBytesInBuffer_ = 0;
+            // resets Buffersize_, so call before reinit
+            internalReset();
+            resetBuffers();
         }
 
         const Response& top() const { return *spTop_; }
@@ -310,7 +340,6 @@ namespace redis
             }
         };
 
-        boost::array<char,1024> InternalBuffer_;
         size_t InitialBuffersize_;
         size_t Buffersize_;
         std::list<InternalBufferType> BufferContainer_;
@@ -319,22 +348,18 @@ namespace redis
         std::stack<ParseStackEntry> Partstack_;
         InternalBufferType::size_type StartPosition_;
         InternalBufferType::size_type ParsePosition_;
-        InternalBufferType::size_type ValidBytesInBuffer_;
+        InternalBufferType::size_type ParsedBytesInBuffer_;
+        InternalBufferType::size_type UnparsedBytesInBuffer_;
+        InternalBufferType::size_type Offset_;
         bool CRSeen_;
         bool CRLFSeen_;
 
         const InternalBufferType::pointer raw_buffer_pointer() {
-            if (BufferContainer_.empty())
-                return InternalBuffer_.data();
-            else
-                return BufferContainer_.back().data();
+            return BufferContainer_.back().data();
         }
 
         boost::asio::mutable_buffer raw_buffer() {
-            if (BufferContainer_.empty())
-                return boost::asio::buffer(InternalBuffer_);
-            else
-                return boost::asio::buffer(BufferContainer_.back());
+            return boost::asio::buffer(BufferContainer_.back());
         }
 
         static off_t local_atoi(const char *p) {
@@ -352,6 +377,31 @@ namespace redis
                 x = -x;
             }
             return x;
+        }
+
+        void resetBuffers()
+        {
+            // Free surplus Buffers
+            if (BufferContainer_.size() > 1)
+            {
+                std::iter_swap(BufferContainer_.begin(), --BufferContainer_.end());
+                BufferContainer_.resize(1);
+            }
+        }
+
+        void internalReset()
+        {
+            Buffersize_ = InitialBuffersize_;
+            spTop_.reset();
+            while (!Partstack_.empty())
+                Partstack_.pop();
+            CRSeen_ = false;
+            CRLFSeen_ = true;
+            ParsePosition_ = 0;
+            StartPosition_ = 0;
+            ParsedBytesInBuffer_ = 0;
+            UnparsedBytesInBuffer_ = 0;
+            Offset_ = 0;
         }
     };
 }
