@@ -41,7 +41,7 @@ namespace redis
     public:
         typedef std::shared_ptr<Connection> x;
 
-        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager) :
+        Connection(boost::asio::io_service& io_service, ConnectionManagerType& Manager) :
             ConnectionBase(io_service),
             Manager_(Manager)
         {}
@@ -78,21 +78,21 @@ namespace redis
         auto async_command(const Request& Command, CompletionToken&& token)
         {
             using handler_type = typename boost::asio::handler_type<CompletionToken,
-                void(boost::system::error_code, const Response& Data)>::type;
+                void(boost::system::error_code, Response Data)>::type;
             handler_type handler(std::forward<decltype(token)>(token));
             boost::asio::async_result<decltype(handler)> result(handler);
 
             if (!Socket_.is_open())
             {
                 Manager_.async_getConnectedSocket(io_service_,
-                                                  [this, &Command, handler](boost::system::error_code ec, boost::asio::ip::tcp::socket& Socket) mutable {
+                                                  [this, &Command, handler](const boost::system::error_code& ec, std::shared_ptr<boost::asio::ip::tcp::socket>& spSocket) mutable {
                     if (ec)
                     {
                         handler(ec, Response());
                     }
                     else
                     {
-                        Socket_ = std::move(Socket);
+                        Socket_ = std::move(*spSocket);
 
                         internalSendData(Command, std::forward<handler_type>(handler));
                     }
@@ -141,7 +141,7 @@ namespace redis
         }
 
     private:
-        ConnectionManagerType Manager_;
+        ConnectionManagerType& Manager_;
     };
 }
 

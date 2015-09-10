@@ -1,11 +1,12 @@
 #include "stdafx.h"
 
-#include "redisClient\Response.h"
-#include "redisClient\Request.h"
-#include "redisClient\SimpleConnectionManager.h"
-#include "redisClient\Connection.h"
-#include "redisClient\Error.h"
-#include "redisClient\Commands.h"
+#include "redisClient/Response.h"
+#include "redisClient/Request.h"
+#include "redisClient/SingleHostConnectionManager.h"
+#include "redisClient/MultipleHostsConnectionManager.h"
+#include "redisClient/Connection.h"
+#include "redisClient/Error.h"
+#include "redisClient/Commands.h"
 
 #ifndef _DEBUGf
 
@@ -44,19 +45,21 @@ int main(int argc, char**argv)
 
         boost::asio::io_service io_service;
 
-        redis::SimpleConnectionManager scm(Hostname, Port);
-        //redis::SimpleConnectionManager scm("localhost", 6379);
-        //redis::SimpleConnectionManager scm("hgf-vb-vg-857.int.alte-leipziger.de", 6379);
+        using namespace redis;
 
-        redis::Connection<redis::SimpleConnectionManager> con(io_service, scm);
+        redis::SingleHostConnectionManager scm(Hostname, Port);
+        redis::MultipleHostsConnectionManager mcm(io_service, { MultipleHostsConnectionManager::Host{ "localhost", 6379 }, MultipleHostsConnectionManager::Host{Hostname, Port } });
+
+        //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
+        redis::Connection<redis::MultipleHostsConnectionManager> con(io_service, mcm);
 
         boost::system::error_code ec;
-        auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");
-        if (ec)
-            std::cerr << ec.message() << std::endl;
-        auto yy = redis::sentinel_sentinels(con, ec, "almaster");
-        if (ec)
-            std::cerr << ec.message() << std::endl;
+        //auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");
+        //if (ec)
+        //    std::cerr << ec.message() << std::endl;
+        //auto yy = redis::sentinel_sentinels(con, ec, "almaster");
+        //if (ec)
+        //    std::cerr << ec.message() << std::endl;
 
         /// Synchronous Version
 #ifdef sdfasdf

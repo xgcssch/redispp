@@ -13,8 +13,7 @@ namespace redis
         success = 0,
         protocol_error,
         no_data,
-        user_permission_denied,
-        user_out_of_memory = 4711
+        no_usable_server
     };
 
     class redis_error_category_imp : public boost::system::error_category

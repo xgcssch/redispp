@@ -27,9 +27,6 @@
     <ClInclude Include="redisClient\Response.h">
       <Filter>Header Files\redisClient</Filter>
     </ClInclude>
-    <ClInclude Include="redisClient\SimpleConnectionManager.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
     <ClInclude Include="redisClient\Connection.h">
       <Filter>Header Files\redisClient</Filter>
     </ClInclude>
@@ -40,6 +37,12 @@
       <Filter>Header Files\redisClient</Filter>
     </ClInclude>
     <ClInclude Include="redisClient\Commands.h">
+      <Filter>Header Files\redisClient</Filter>
+    </ClInclude>
+    <ClInclude Include="redisClient\SingleHostConnectionManager.h">
+      <Filter>Header Files\redisClient</Filter>
+    </ClInclude>
+    <ClInclude Include="redisClient\MultipleHostsConnectionManager.h">
       <Filter>Header Files\redisClient</Filter>
     </ClInclude>
   </ItemGroup>

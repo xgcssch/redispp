@@ -31,10 +31,13 @@ namespace redis
 
         auto spRequest = std::make_shared<Request>(pPrepareFunction(args...));
 
-        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](auto ec, const auto& Data)
+        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](const auto& ec, const auto& Data)
         {
             if (ec)
-                handler(ec, decltype(pResponseFunction(Data, ec))());
+            {
+                boost::system::error_code ec2;
+                handler(ec2, decltype(pResponseFunction(Data, ec2))());
+            }
             else
                 handler(ec, pResponseFunction(Data, ec));
         });
@@ -51,10 +54,13 @@ namespace redis
 
         auto spRequest = std::make_shared<Request>(pPrepareFunction(args...));
 
-        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](auto ec, const auto& Data)
+        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](const auto& ec, const auto& Data)
         {
             if (!ec)
-                pResponseFunction(Data, ec);
+            {
+                boost::system::error_code ec2;
+                pResponseFunction(Data, ec2);
+            }
 
             handler(ec);
         });
