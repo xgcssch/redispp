@@ -13,9 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Header Files\redisClient">
-      <UniqueIdentifier>{7a4a0fa0-8141-40b9-9cef-4261940e831f}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -24,36 +21,12 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="redisClient\Response.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\Connection.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\Request.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\Error.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\Commands.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\SingleHostConnectionManager.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\MultipleHostsConnectionManager.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
-    <ClInclude Include="redisClient\SentinelConnectionManager.h">
-      <Filter>Header Files\redisClient</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="unittest1.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

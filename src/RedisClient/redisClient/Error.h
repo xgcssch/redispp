@@ -29,9 +29,11 @@ namespace redis
 
         std::string message(int ev) const
         {
-            switch (ev)
+            switch (static_cast<ErrorCodes>(ev))
             {
                 case ErrorCodes::protocol_error: return "REDIS protocol error";
+                case ErrorCodes::no_data: return "REDIS no data from server";
+                case ErrorCodes::no_usable_server: return "REDIS no usable server found";
                 default: return "Unknown REDIS error";
             }
         }

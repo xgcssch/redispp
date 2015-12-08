@@ -9,6 +9,57 @@ namespace redis
     class SingleHostConnectionManager
     {
     public:
+        class Instance
+        {
+        public:
+            Instance( const Instance& ) = default;
+            Instance& operator=( const Instance& ) = default;
+
+            Instance( const SingleHostConnectionManager& shcm ) :
+                SingleHostConnectionManager_( shcm )
+            {}
+
+            boost::asio::ip::tcp::socket getConnectedSocket( boost::asio::io_service& io_service, boost::system::error_code& ec )
+            {
+                boost::asio::ip::tcp::socket Socket( io_service );
+
+                boost::asio::ip::tcp::resolver resolver( io_service );
+                boost::asio::ip::tcp::resolver::query query( SingleHostConnectionManager_.Servername_, std::to_string( SingleHostConnectionManager_.Port_ ) );
+                boost::asio::connect( Socket, resolver.resolve( query ), ec );
+
+                return Socket;
+            }
+
+            template <class	CompletionToken>
+            auto async_getConnectedSocket( boost::asio::io_service& io_service, CompletionToken&& token )
+            {
+                using handler_type = typename boost::asio::handler_type<CompletionToken,
+                    void( boost::system::error_code ec, std::shared_ptr<boost::asio::ip::tcp::socket> Socket )>::type;
+                handler_type handler( std::forward<CompletionToken&&>( token ) );
+                boost::asio::async_result<decltype(handler)> result( handler );
+
+                std::shared_ptr<boost::asio::ip::tcp::resolver> spResolver = std::make_shared<boost::asio::ip::tcp::resolver>( io_service );
+                boost::asio::ip::tcp::resolver::query query( SingleHostConnectionManager_.Servername_, std::to_string( SingleHostConnectionManager_.Port_ ) );
+                spResolver->async_resolve( query,
+                                           [&io_service, handler, spResolver]( const boost::system::error_code& error, const boost::asio::ip::tcp::resolver::iterator& iterator ) mutable {
+                    if( error )
+                        handler( error, std::shared_ptr<boost::asio::ip::tcp::socket>() );
+                    else
+                    {
+                        std::shared_ptr<boost::asio::ip::tcp::socket> spSocket = std::make_shared<boost::asio::ip::tcp::socket>( io_service );
+                        boost::asio::async_connect( *spSocket, iterator,
+                                                    [spSocket, handler]( const boost::system::error_code& error, const boost::asio::ip::tcp::resolver::iterator& iterator ) mutable {
+                            handler( error, spSocket );
+                        }
+                        );
+                    }
+                } );
+
+                return result.get();
+            }
+        private:
+            const SingleHostConnectionManager& SingleHostConnectionManager_;
+        };
 
         SingleHostConnectionManager(const SingleHostConnectionManager&) = delete;
         SingleHostConnectionManager& operator=(const SingleHostConnectionManager&) = delete;
@@ -22,43 +73,9 @@ namespace redis
             SingleHostConnectionManager(std::get<0>(Servername), std::get<1>(Servername))
         {}
 
-        boost::asio::ip::tcp::socket getConnectedSocket(boost::asio::io_service& io_service, boost::system::error_code& ec)
+        Instance getInstance() const
         {
-            boost::asio::ip::tcp::socket Socket(io_service);
-
-            boost::asio::ip::tcp::resolver resolver(io_service);
-            boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
-            boost::asio::connect(Socket, resolver.resolve(query), ec);
-
-            return Socket;
-        }
-
-        template <class	CompletionToken>
-        auto async_getConnectedSocket(boost::asio::io_service& io_service, CompletionToken&& token)
-        {
-            using handler_type = typename boost::asio::handler_type<CompletionToken,
-                void(boost::system::error_code ec, std::shared_ptr<boost::asio::ip::tcp::socket> Socket)>::type;
-            handler_type handler(std::forward<CompletionToken&&>(token));
-            boost::asio::async_result<decltype(handler)> result(handler);
-
-            std::shared_ptr<boost::asio::ip::tcp::resolver> spResolver = std::make_shared<boost::asio::ip::tcp::resolver>(io_service);
-            boost::asio::ip::tcp::resolver::query query(Servername_, std::to_string(Port_));
-            spResolver->async_resolve(query,
-                                      [&io_service, handler, spResolver](const boost::system::error_code& error, const boost::asio::ip::tcp::resolver::iterator& iterator) mutable {
-                if (error)
-                    handler(error, std::shared_ptr<boost::asio::ip::tcp::socket>());
-                else
-                {
-                    std::shared_ptr<boost::asio::ip::tcp::socket> spSocket = std::make_shared<boost::asio::ip::tcp::socket>(io_service);
-                    boost::asio::async_connect(*spSocket, iterator,
-                                               [spSocket, handler](const boost::system::error_code& error, const boost::asio::ip::tcp::resolver::iterator& iterator) mutable {
-                        handler(error, spSocket);
-                    }
-                    );
-                }
-            });
-
-            return result.get();
+            return Instance( *this );
         }
     private:
         std::string Servername_;

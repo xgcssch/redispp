@@ -36,38 +36,51 @@ namespace redis
     };
 
     template <class ConnectionManagerType>
-    class Connection : ConnectionBase
+    class Connection : private ConnectionBase
     {
     public:
         typedef std::shared_ptr<Connection> x;
 
-        Connection(boost::asio::io_service& io_service, ConnectionManagerType& Manager) :
+        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager) :
             ConnectionBase(io_service),
-            Manager_(Manager)
+            ConnectionManagerInstance_(Manager.getInstance())
         {}
 
         auto command(const Request& Command, boost::system::error_code& ec)
         {
             auto res = std::make_unique<ResponseHandler>();
-            if (!Socket_.is_open())
+            for( ;;)
             {
-                auto Socket = Manager_.getConnectedSocket(io_service_, ec);
-                if (ec)
-                    return res;
-                else
-                    Socket_ = std::move(Socket);
-            }
+                if( !Socket_.is_open() )
+                {
+                    auto Socket = ConnectionManagerInstance_.getConnectedSocket( io_service_, ec );
+                    if( ec )
+                        return res;
+                    else
+                        Socket_ = std::move( Socket );
+                }
 
-            boost::asio::write(Socket_, Command.bufferSequence(), ec);
-            if (ec)
-                return res;
+                boost::asio::write( Socket_, Command.bufferSequence(), ec );
+                if( ec )
+                {
+                    Socket_.close();
+
+                    // Try again!
+                    continue;
+                }
+
+                break;
+            }
 
             size_t BytesRead;
             do
             {
                 BytesRead = Socket_.read_some(boost::asio::buffer(res->buffer()), ec);
                 if (ec)
+                {
+                    Socket_.close();
                     return res;
+                }
 
             } while (!res->dataReceived(BytesRead));
 
@@ -84,7 +97,7 @@ namespace redis
 
             if (!Socket_.is_open())
             {
-                Manager_.async_getConnectedSocket(io_service_,
+                ConnectionManagerInstance_.async_getConnectedSocket(io_service_,
                                                   [this, &Command, handler](const boost::system::error_code& ec, std::shared_ptr<boost::asio::ip::tcp::socket>& spSocket) mutable {
                     if (ec)
                     {
@@ -140,8 +153,23 @@ namespace redis
             });
         }
 
+        boost::asio::ip::tcp::socket passSocket()
+        {
+            return boost::asio::ip::tcp::socket( std::move(Socket_) );
+        }
+
+        std::tuple<std::string, int> remote_endpoint()
+        {
+            return std::make_tuple( Socket_.remote_endpoint().address().to_string(), Socket_.remote_endpoint().port() );
+        }
+
+        typename ConnectionManagerType::Instance& instance()
+        {
+            return ConnectionManagerInstance_;
+        }
+
     private:
-        ConnectionManagerType& Manager_;
+        typename ConnectionManagerType::Instance ConnectionManagerInstance_;
     };
 }
 

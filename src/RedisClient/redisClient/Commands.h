@@ -12,60 +12,102 @@
 
 namespace redis
 {
-    template <class Connection, class RequestT_, class ResponseT_, class ... Types>
-    auto sync_universal(Connection& con, boost::system::error_code& ec, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args)
-    {
-        auto theResponse = con.command(pPrepareFunction(args...), ec);
-        if (ec)
-            return decltype(pResponseFunction(theResponse->top(), ec))();
+    namespace Detail {
+        template <class Connection, class RequestT_, class ResponseT_, class ... Types>
+        auto sync_universal( Connection& con, boost::system::error_code& ec, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args )
+        {
+            auto theResponse = con.command( pPrepareFunction( args... ), ec );
+            if( ec )
+                return decltype(pResponseFunction( theResponse->top(), ec ))();
 
-        return pResponseFunction(theResponse->top(), ec);
+            return pResponseFunction( theResponse->top(), ec );
+        }
+
+        template <class Connection, class CompletionToken, class RequestT_, class ResponseT_, class ... Types>
+        auto async_universal( Connection& con, CompletionToken&& token, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args )
+        {
+            using handler_type = typename boost::asio::handler_type<CompletionToken, void( boost::system::error_code, ResponseT_ )>::type;
+            handler_type handler( std::forward<decltype(token)>( token ) );
+            boost::asio::async_result<decltype(handler)> result( handler );
+
+            auto spRequest = std::make_shared<Request>( pPrepareFunction( args... ) );
+
+            con.async_command( *spRequest, [&con, spRequest, handler, pResponseFunction]( const auto& ec, const auto& Data )
+            {
+                if( ec )
+                {
+                    boost::system::error_code ec2;
+                    handler( ec2, decltype(pResponseFunction( Data, ec2 ))() );
+                }
+                else
+                    handler( ec, pResponseFunction( Data, ec ) );
+            } );
+
+            return result.get();
+        }
+
+        template <class Connection, class CompletionToken, class RequestT_, class ResponseT_, class ... Types>
+        auto async_universal_void( Connection& con, CompletionToken&& token, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args )
+        {
+            using handler_type = typename boost::asio::handler_type<CompletionToken, void( boost::system::error_code, ResponseT_ )>::type;
+            handler_type handler( std::forward<decltype(token)>( token ) );
+            boost::asio::async_result<decltype(handler)> result( handler );
+
+            auto spRequest = std::make_shared<Request>( pPrepareFunction( args... ) );
+
+            con.async_command( *spRequest, [&con, spRequest, handler, pResponseFunction]( const auto& ec, const auto& Data )
+            {
+                if( !ec )
+                {
+                    boost::system::error_code ec2;
+                    pResponseFunction( Data, ec2 );
+                }
+
+                handler( ec );
+            } );
+
+            return result.get();
+        }
     }
 
-    template <class Connection, class CompletionToken, class RequestT_, class ResponseT_, class ... Types>
-    auto async_universal(Connection& con, CompletionToken&& token, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args)
-    {
-        using handler_type = typename boost::asio::handler_type<CompletionToken, void(boost::system::error_code, ResponseT_)>::type;
-        handler_type handler(std::forward<decltype(token)>(token));
-        boost::asio::async_result<decltype(handler)> result(handler);
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                          C L I E N T  S E T N A M E
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        auto spRequest = std::make_shared<Request>(pPrepareFunction(args...));
-
-        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](const auto& ec, const auto& Data)
+    namespace Detail {
+        template <class T1_>
+        Request prepareRequest_ClientSetname( const T1_ ConnectionName )
         {
-            if (ec)
-            {
-                boost::system::error_code ec2;
-                handler(ec2, decltype(pResponseFunction(Data, ec2))());
-            }
+            Request r( "CLIENT", "SETNAME" );
+            r << ConnectionName;
+            return r;
+        }
+
+        auto processResult_simpleOKResponse( const Response& Data, boost::system::error_code& ec )
+        {
+            if( Data.type() == Response::Type::SimpleString && Data.string() == "OK" )
+                return true;
             else
-                handler(ec, pResponseFunction(Data, ec));
-        });
-
-        return result.get();
+                if( Data.type() == Response::Type::Null )
+                    return false;
+                else
+                {
+                    ec = ::redis::make_error_code( ErrorCodes::protocol_error );
+                    return false;
+                }
+        }
     }
 
-    template <class Connection, class CompletionToken, class RequestT_, class ResponseT_, class ... Types>
-    auto async_universal_void(Connection& con, CompletionToken&& token, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args)
+    template <class Connection, class T1_>
+    auto clientSetname( Connection& con, boost::system::error_code& ec, T1_ ConnectionName )
     {
-        using handler_type = typename boost::asio::handler_type<CompletionToken, void(boost::system::error_code, ResponseT_)>::type;
-        handler_type handler(std::forward<decltype(token)>(token));
-        boost::asio::async_result<decltype(handler)> result(handler);
+        return Detail::sync_universal( con, ec, &Detail::prepareRequest_ClientSetname<decltype(ConnectionName)>, &Detail::processResult_simpleOKResponse, ConnectionName );
+    }
 
-        auto spRequest = std::make_shared<Request>(pPrepareFunction(args...));
-
-        con.async_command(*spRequest, [&con, spRequest, handler, pResponseFunction](const auto& ec, const auto& Data)
-        {
-            if (!ec)
-            {
-                boost::system::error_code ec2;
-                pResponseFunction(Data, ec2);
-            }
-
-            handler(ec);
-        });
-
-        return result.get();
+    template <class Connection, class CompletionToken, class T1_>
+    auto async_clientSetname( Connection& con, CompletionToken&& token, T1_ ConnectionName )
+    {
+        return Detail::async_universal( con, token, &Detail::prepareRequest_ClientSetname<decltype(ConnectionName)>, &Detail::processResult_simpleOKResponse, ConnectionName );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -94,13 +136,13 @@ namespace redis
     template <class Connection, class T1_>
     auto get(Connection& con, boost::system::error_code& ec, T1_ Key)
     {
-        return sync_universal(con, ec, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
+        return Detail::sync_universal(con, ec, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_get(Connection& con, CompletionToken&& token, T1_ Key)
     {
-        return async_universal(con, token, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
+        return Detail::async_universal(con, token, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,13 +168,13 @@ namespace redis
     template <class Connection, class T1_>
     auto incr(Connection& con, boost::system::error_code& ec, T1_ Key)
     {
-        return sync_universal(con, ec, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
+        return Detail::sync_universal(con, ec, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_incr(Connection& con, CompletionToken&& token, T1_ Key)
     {
-        return async_universal(con, token, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
+        return Detail::async_universal(con, token, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -153,13 +195,42 @@ namespace redis
     template <class Connection>
     auto ping(Connection& con, boost::system::error_code& ec)
     {
-        return sync_universal(con, ec, &prepareRequest_ping, &processResult_ping);
+        return Detail::sync_universal(con, ec, &prepareRequest_ping, &processResult_ping);
     }
 
     template <class Connection, class CompletionToken>
     auto async_ping(Connection& con, CompletionToken&& token)
     {
-        return async_universal_void(con, token, &prepareRequest_ping, &processResult_ping);
+        return Detail::async_universal_void(con, token, &prepareRequest_ping, &processResult_ping);
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                     R O L E
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Request prepareRequest_role()
+    {
+        return Request( "ROLE" );
+    }
+
+    auto processResult_role( const Response& Data, boost::system::error_code& ec )
+    {
+        if( Data.type() != Response::Type::Array || Data.elements().empty() )
+            ec = ::redis::make_error_code( ErrorCodes::protocol_error );
+
+        return Data[0].string();
+    }
+
+    template <class Connection>
+    auto role( Connection& con, boost::system::error_code& ec )
+    {
+        return Detail::sync_universal( con, ec, &prepareRequest_role, &processResult_role );
+    }
+
+    template <class Connection, class CompletionToken>
+    auto async_role( Connection& con, CompletionToken&& token )
+    {
+        return Detail::async_universal_void( con, token, &prepareRequest_role, &processResult_role );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -189,16 +260,17 @@ namespace redis
         }
     }
 
+    /// <returns>Pair of HostIP and Port</returns>
     template <class Connection, class T1_>
     auto sentinel_getMasterAddrByName(Connection& con, boost::system::error_code& ec, T1_ Mastername)
     {
-        return sync_universal(con, ec, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
+        return Detail::sync_universal(con, ec, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_sentinel_getMasterAddrByName(Connection& con, CompletionToken&& token, T1_ Mastername)
     {
-        return async_universal(con, token, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
+        return Detail::async_universal(con, token, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -248,13 +320,13 @@ namespace redis
     template <class Connection, class T1_>
     auto sentinel_sentinels(Connection& con, boost::system::error_code& ec, T1_ Mastername)
     {
-        return sync_universal(con, ec, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
+        return Detail::sync_universal(con, ec, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_sentinel_sentinels(Connection& con, CompletionToken&& token, T1_ Mastername)
     {
-        return async_universal(con, token, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
+        return Detail::async_universal(con, token, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -265,44 +337,30 @@ namespace redis
 
     namespace Detail {
         template <class T1_, class T2_>
-        Request prepareRequest_set(T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds, SetOptions Options)
+        Request prepareRequest_set( T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds, SetOptions Options )
         {
-            Request r("SET");
+            Request r( "SET" );
             r << Key << Value;
-            if (ExpireTimeInMilliseconds != std::chrono::milliseconds::zero())
+            if( ExpireTimeInMilliseconds != std::chrono::milliseconds::zero() )
                 r << "PX" << ExpireTimeInMilliseconds.count();
-            if (Options == SetOptions::SetIfNotExist)
+            if( Options == SetOptions::SetIfNotExist )
                 r << "NX";
-            if (Options == SetOptions::SetIfExist)
+            if( Options == SetOptions::SetIfExist )
                 r << "XX";
             return r;
-        }
-
-        auto processResult_set(const Response& Data, boost::system::error_code& ec)
-        {
-            if (Data.type() == Response::Type::SimpleString && Data.string() == "OK")
-                return true;
-            else
-                if (Data.type() == Response::Type::Null)
-                    return false;
-                else
-                {
-                    ec = ::redis::make_error_code(ErrorCodes::protocol_error);
-                    return false;
-                }
         }
     }
 
     template <class Connection, class T1_, class T2_>
     auto set(Connection& con, boost::system::error_code& ec, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_set<decltype(Key), decltype(Value)>, &processResult_set, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::sync_universal(con, ec, &prepareRequest_set<decltype(Key), decltype(Value)>, &Detail::processResult_simpleOKResponse, Key, Value, ExpireTimeInMilliseconds, Options);
     }
 
     template <class Connection, class CompletionToken, class T1_, class T2_>
     auto async_set(Connection& con, CompletionToken&& token, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::async_universal(con, token, &prepareRequest_set<decltype(Key), decltype(Value)>, &processResult_set, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::async_universal(con, token, &prepareRequest_set<decltype(Key), decltype(Value)>, &Detail::processResult_simpleOKResponse, Key, Value, ExpireTimeInMilliseconds, Options);
     }
 
 }

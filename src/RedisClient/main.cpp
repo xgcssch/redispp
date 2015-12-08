@@ -4,6 +4,7 @@
 #include "redisClient/Request.h"
 #include "redisClient/SingleHostConnectionManager.h"
 #include "redisClient/MultipleHostsConnectionManager.h"
+#include "redisClient/SentinelConnectionManager.h"
 #include "redisClient/Connection.h"
 #include "redisClient/Error.h"
 #include "redisClient/Commands.h"
@@ -12,6 +13,9 @@
 
 #include <time.h>
 #include <string.h>
+
+#include <thread>
+#include <chrono>
 
 namespace po = boost::program_options;
 
@@ -47,19 +51,58 @@ int main(int argc, char**argv)
 
         using namespace redis;
 
-        redis::SingleHostConnectionManager scm(Hostname, Port);
-        redis::MultipleHostsConnectionManager mcm(io_service, { MultipleHostsConnectionManager::Host{ "localhost", 6379 }, MultipleHostsConnectionManager::Host{Hostname, Port } });
+        //redis::SingleHostConnectionManager scm(Hostname, Port);
+        redis::MultipleHostsConnectionManager mcm(io_service, 
+            { 
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 },
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }
+            }
+        );
+        redis::SentinelConnectionManager secm( io_service,
+            {
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 }/*,
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
+                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }*/
+            }, "almaster"
+        );
 
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
-        redis::Connection<redis::MultipleHostsConnectionManager> con(io_service, mcm);
+        //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
+        redis::Connection<redis::SentinelConnectionManager> con(io_service, secm);
 
         boost::system::error_code ec;
+        for( ;;) 
+        {
+            redis::ping( con, ec );
+            if( ec )
+                std::cerr << ec.message() << std::endl;
+            else
+            {
+                using namespace std::literals;
+
+                auto rh = con.remote_endpoint();
+                std::cerr << "OK " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
+                std::this_thread::sleep_for( 1s );
+            }
+        }
+
+        //boost::system::error_code ec;
         //auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");
-        //if (ec)
+        //if( ec )
         //    std::cerr << ec.message() << std::endl;
+        //else
+        //    std::cerr << xx.first << ":" << xx.second << std::endl;
         //auto yy = redis::sentinel_sentinels(con, ec, "almaster");
         //if (ec)
         //    std::cerr << ec.message() << std::endl;
+        //else
+        //{
+        //    for( const auto& Sentinel : yy )
+        //    {
+        //        std::cerr << Sentinel.at("name") << std::endl;
+        //    }
+        //}
 
         /// Synchronous Version
 #ifdef sdfasdf
@@ -90,7 +133,7 @@ int main(int argc, char**argv)
         std::cout << "Final value of counter: " << std::string(boost::asio::buffer_cast<const char*>(xx.value()), boost::asio::buffer_size(xx.value())) << "\n";
         bool setok = redis::set(con, ec, "ein", "test");
 #endif
-
+#if sadfasdfsdf
         // Callback Version
         //con.async_command(r, [&con](auto ec, auto Data)
         //{
@@ -151,6 +194,7 @@ int main(int argc, char**argv)
         //});
         //std::thread thread([&io_service]() { io_service.run(); });
         //thread.join();
+#endif
     }
     catch (const std::exception& ex)
     {
