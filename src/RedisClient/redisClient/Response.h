@@ -14,7 +14,8 @@ namespace redis
         typedef std::vector<std::shared_ptr<Response>> ElementContainer;
         enum class Type { SimpleString, Error, Integer, BulkString, Null, Array };
 
-        Response(const Response&) = delete;
+        Response( const Response& ) = delete;
+        Response( Response&& ) = default;
         Response& operator=(const Response&) = delete;
 
         Response() :
@@ -23,6 +24,17 @@ namespace redis
             Length_(0)
         {
         }
+
+        //Response( Response&& rhs )
+        //{
+        //    Type_ = rhs.Type_;
+        //    rhs.Type_ = Type::Null;
+        //    pData_ = rhs.pData_;
+        //    rhs.pData_ = nullptr;
+        //    Length_ = rhs.Length_;
+        //    rhs.Length_ = 0;
+        //    Elements_ = std::move( rhs.Elements_ );
+        //}
 
         Response(Type PartType, const char* pData, size_t Length) :
             Type_(PartType),
@@ -76,6 +88,7 @@ namespace redis
         const char* data() const { return pData_; }
         size_t size() const { return Length_; }
         std::string string() const { return Length_?std::string(pData_, Length_):std::string(); }
+        int64_t asint() const { return std::stoll( string() ); }
         const ElementContainer& elements() const { return Elements_; }
         const ElementContainer::value_type::element_type& operator[]( size_t Index ) const { return *Elements_.operator[](Index); }
     private:
@@ -327,6 +340,7 @@ namespace redis
         }
 
         const Response& top() const { return *spTop_; }
+        Response& top() { return *spTop_; }
 
     private:
         struct ParseStackEntry {

@@ -11,6 +11,7 @@ namespace redis
     enum class ErrorCodes
     {
         success = 0,
+        server_error,
         protocol_error,
         no_data,
         no_usable_server
@@ -20,7 +21,7 @@ namespace redis
     {
     public:
         redis_error_category_imp() : boost::system::error_category() { }
-        const char * name() const BOOST_SYSTEM_NOEXCEPT { return "redis"; }
+        const char * name() const BOOST_SYSTEM_NOEXCEPT { return "RedisClient"; }
 
         boost::system::error_condition default_error_condition(int ev) const  BOOST_SYSTEM_NOEXCEPT
         {
@@ -31,10 +32,11 @@ namespace redis
         {
             switch (static_cast<ErrorCodes>(ev))
             {
-                case ErrorCodes::protocol_error: return "REDIS protocol error";
-                case ErrorCodes::no_data: return "REDIS no data from server";
-                case ErrorCodes::no_usable_server: return "REDIS no usable server found";
-                default: return "Unknown REDIS error";
+                case ErrorCodes::server_error: return "Server signaled error";
+                case ErrorCodes::protocol_error: return "Protocol error";
+                case ErrorCodes::no_data: return "No data from server";
+                case ErrorCodes::no_usable_server: return "No usable server found";
+                default: return "Unknown error";
             }
         }
     };

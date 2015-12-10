@@ -2,6 +2,7 @@
 #define REDIS_COMMANDS_INCLUDED
 
 #include "redisClient\Response.h"
+#include "redisClient\Error.h"
 
 #include <boost\optional.hpp>
 
@@ -16,9 +17,16 @@ namespace redis
         template <class Connection, class RequestT_, class ResponseT_, class ... Types>
         auto sync_universal( Connection& con, boost::system::error_code& ec, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args )
         {
-            auto theResponse = con.command( pPrepareFunction( args... ), ec );
+            auto theResponse = con.transmitCommand( pPrepareFunction( args... ), ec );
             if( ec )
                 return decltype(pResponseFunction( theResponse->top(), ec ))();
+
+            if( theResponse->top().type() == Response::Type::Error )
+            {
+                ec = ::redis::make_error_code( ErrorCodes::server_error );
+                con.setLastServerError( theResponse->top().string() );
+                return decltype(pResponseFunction( theResponse->top(), ec ))();
+            }
 
             return pResponseFunction( theResponse->top(), ec );
         }
@@ -70,44 +78,86 @@ namespace redis
         }
     }
 
+    auto OKResult( const Response& Data, boost::system::error_code& ec )
+    {
+        if( Data.type() == Response::Type::SimpleString && Data.string() == "OK" )
+            return true;
+        else
+            if( Data.type() == Response::Type::Null )
+                return false;
+            else
+            {
+                ec = ::redis::make_error_code( ErrorCodes::protocol_error );
+                return false;
+            }
+    }
+
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //                                          C L I E N T  S E T N A M E
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    namespace Detail {
-        template <class T1_>
-        Request prepareRequest_ClientSetname( const T1_ ConnectionName )
-        {
-            Request r( "CLIENT", "SETNAME" );
-            r << ConnectionName;
-            return r;
-        }
-
-        auto processResult_simpleOKResponse( const Response& Data, boost::system::error_code& ec )
-        {
-            if( Data.type() == Response::Type::SimpleString && Data.string() == "OK" )
-                return true;
-            else
-                if( Data.type() == Response::Type::Null )
-                    return false;
-                else
-                {
-                    ec = ::redis::make_error_code( ErrorCodes::protocol_error );
-                    return false;
-                }
-        }
+    template <class T1_>
+    Request clientSetnameRequest( const T1_ ConnectionName )
+    {
+        Request r( "CLIENT", "SETNAME" );
+        r << ConnectionName;
+        return r;
     }
 
     template <class Connection, class T1_>
     auto clientSetname( Connection& con, boost::system::error_code& ec, T1_ ConnectionName )
     {
-        return Detail::sync_universal( con, ec, &Detail::prepareRequest_ClientSetname<decltype(ConnectionName)>, &Detail::processResult_simpleOKResponse, ConnectionName );
+        return Detail::sync_universal( con, ec, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, ConnectionName );
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_clientSetname( Connection& con, CompletionToken&& token, T1_ ConnectionName )
     {
-        return Detail::async_universal( con, token, &Detail::prepareRequest_ClientSetname<decltype(ConnectionName)>, &Detail::processResult_simpleOKResponse, ConnectionName );
+        return Detail::async_universal( con, token, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, ConnectionName );
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                     E X E C
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Request execCommand()
+    {
+        return Request("EXEC");
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                  E X P I R E
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    template <class T1_>
+    Request expireCommand( T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    {
+        Request r( "PEXPIRE" );
+        r << Key << ExpireTimeInMilliseconds.count();
+        return r;
+    }
+
+    bool expireResult( const Response& Data, boost::system::error_code& ec )
+    {
+        if( Data.type() != Response::Type::Integer )
+        {
+            ec = ::redis::make_error_code( ErrorCodes::protocol_error );
+            return false;
+        }
+
+        return Data.string() == "1";
+    }
+
+    template <class Connection, class T1_>
+    auto expire( Connection& con, boost::system::error_code& ec, T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    {
+        return Detail::sync_universal( con, ec, &expireCommand<decltype(Key)>, &expireResult, Key, ExpireTimeInMilliseconds );
+    }
+
+    template <class Connection, class CompletionToken, class T1_>
+    auto async_expire( Connection& con, CompletionToken&& token, T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    {
+        return Detail::async_universal_void( con, token, &expireCommand<decltype(Key), &expireResult, Key, ExpireTimeInMilliseconds );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -115,20 +165,20 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request prepareRequest_get(T1_ Key)
+    Request getCommand( T1_ Key )
     {
-        Request r("GET");
+        Request r( "GET" );
         r << Key;
         return r;
     }
 
-    boost::optional<boost::asio::const_buffer> processResult_get(const Response& Data, boost::system::error_code& ec)
+    boost::optional<boost::asio::const_buffer> getResult( const Response& Data, boost::system::error_code& ec )
     {
-        if (Data.type() == Response::Type::BulkString)
-            return boost::asio::buffer(Data.data(), Data.size());
+        if( Data.type() == Response::Type::BulkString )
+            return boost::asio::buffer( Data.data(), Data.size() );
         else
-            if (Data.type() != Response::Type::Null)
-                ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+            if( Data.type() != Response::Type::Null )
+                ec = ::redis::make_error_code( ErrorCodes::protocol_error );
 
         return boost::none;
     }
@@ -136,13 +186,13 @@ namespace redis
     template <class Connection, class T1_>
     auto get(Connection& con, boost::system::error_code& ec, T1_ Key)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
+        return Detail::sync_universal(con, ec, &getCommand<decltype(Key)>, &getResult, Key);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_get(Connection& con, CompletionToken&& token, T1_ Key)
     {
-        return Detail::async_universal(con, token, &prepareRequest_get<decltype(Key)>, &processResult_get, Key);
+        return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, Key);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -150,70 +200,96 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request prepareRequest_incr(T1_ Key)
+    Request incrCommand( T1_ Key )
     {
-        Request r("INCR");
+        Request r( "INCR" );
         r << Key;
         return r;
     }
 
-    boost::optional<boost::asio::const_buffer> processResult_incr(const Response& Data, boost::system::error_code& ec)
+    int64_t incrResult( const Response& Data, boost::system::error_code& ec )
     {
-        if (Data.type() != Response::Type::Integer)
-            ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+        if( Data.type() != Response::Type::Integer )
+        {
+            ec = ::redis::make_error_code( ErrorCodes::protocol_error );
+            return 0;
+        }
 
-        return boost::asio::buffer(Data.data(), Data.size());
+        return std::stoll( std::string( Data.data(), Data.size() ) );
     }
 
+    // Call Redis INCR Command syncronously taking a Key and returning an int64_t result
     template <class Connection, class T1_>
     auto incr(Connection& con, boost::system::error_code& ec, T1_ Key)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
+        return Detail::sync_universal(con, ec, &incrCommand<decltype(Key)>, &incrResult, Key);
     }
 
+    // Call Redis INCR Command asyncronously taking a Key and returning an int64_t result
     template <class Connection, class CompletionToken, class T1_>
     auto async_incr(Connection& con, CompletionToken&& token, T1_ Key)
     {
-        return Detail::async_universal(con, token, &prepareRequest_incr<decltype(Key)>, &processResult_incr, Key);
+        return Detail::async_universal(con, token, &incrCommand<decltype(Key)>, &incrResult, Key);
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                S E L E C T
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Request multiCommand()
+    {
+        return Request( "MULTI" );
+    }
+
+    template <class Connection>
+    bool multi( Connection& con, boost::system::error_code& ec )
+    {
+        return Detail::sync_universal( con, ec, &multiCommand, &OKResult );
+    }
+
+    template <class Connection, class CompletionToken>
+    auto async_multi( Connection& con, CompletionToken&& token, int64_t Index )
+    {
+        return Detail::async_universal( con, token, &multiCommand, &OKResult );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //                                                     P I N G
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request prepareRequest_ping()
+    Request pingCommand()
     {
-        return Request("PING");
+        return Request( "PING" );
     }
 
-    void processResult_ping(const Response& Data, boost::system::error_code& ec)
+    void pingResult( const Response& Data, boost::system::error_code& ec )
     {
-        if (Data.type() != Response::Type::SimpleString || Data.string() != "PONG")
-            ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+        if( Data.type() != Response::Type::SimpleString || Data.string() != "PONG" )
+            ec = ::redis::make_error_code( ErrorCodes::protocol_error );
     }
 
     template <class Connection>
     auto ping(Connection& con, boost::system::error_code& ec)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_ping, &processResult_ping);
+        return Detail::sync_universal(con, ec, &pingCommand, &pingResult );
     }
 
     template <class Connection, class CompletionToken>
     auto async_ping(Connection& con, CompletionToken&& token)
     {
-        return Detail::async_universal_void(con, token, &prepareRequest_ping, &processResult_ping);
+        return Detail::async_universal_void(con, token, &pingCommand, &pingResult );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //                                                     R O L E
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request prepareRequest_role()
+    Request roleCommand()
     {
         return Request( "ROLE" );
     }
 
-    auto processResult_role( const Response& Data, boost::system::error_code& ec )
+    auto roleResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() != Response::Type::Array || Data.elements().empty() )
             ec = ::redis::make_error_code( ErrorCodes::protocol_error );
@@ -224,13 +300,36 @@ namespace redis
     template <class Connection>
     auto role( Connection& con, boost::system::error_code& ec )
     {
-        return Detail::sync_universal( con, ec, &prepareRequest_role, &processResult_role );
+        return Detail::sync_universal( con, ec, &roleCommand, &roleResult );
     }
 
     template <class Connection, class CompletionToken>
     auto async_role( Connection& con, CompletionToken&& token )
     {
-        return Detail::async_universal_void( con, token, &prepareRequest_role, &processResult_role );
+        return Detail::async_universal_void( con, token, &roleCommand, &roleResult );
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                S E L E C T
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Request selectCommand( int64_t Index )
+    {
+        Request r( "SELECT" );
+        r << Index;
+        return r;
+    }
+
+    template <class Connection>
+    bool select( Connection& con, boost::system::error_code& ec, int64_t Index )
+    {
+        return Detail::sync_universal( con, ec, &selectCommand, &OKResult, Index );
+    }
+
+    template <class Connection, class CompletionToken>
+    auto async_select( Connection& con, CompletionToken&& token, int64_t Index )
+    {
+        return Detail::async_universal( con, token, &selectCommand, &OKResult, Index );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -238,25 +337,25 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request prepareRequest_SentinelGetMasterAddrByName(T1_ Mastername)
+    Request sentinelGetMasterAddrByNameCommand( T1_ Mastername )
     {
-        Request r("SENTINEL", "get-master-addr-by-name");
+        Request r( "SENTINEL", "get-master-addr-by-name" );
         r << Mastername;
         return r;
     }
 
-    auto processResult_SentinelGetMasterAddrByName(const Response& Data, boost::system::error_code& ec)
+    auto sentinelGetMasterAddrByNameResult( const Response& Data, boost::system::error_code& ec )
     {
-        if (Data.type() == Response::Type::Array && Data.elements().size() == 2)
-            return std::make_pair(Data[0].string(), Data[1].string());
+        if( Data.type() == Response::Type::Array && Data.elements().size() == 2 )
+            return std::make_pair( Data[0].string(), Data[1].string() );
         else
         {
-            if (Data.type() == Response::Type::Null)
-                ec = ::redis::make_error_code(ErrorCodes::no_data);
+            if( Data.type() == Response::Type::Null )
+                ec = ::redis::make_error_code( ErrorCodes::no_data );
             else
-                ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+                ec = ::redis::make_error_code( ErrorCodes::protocol_error );
 
-            return std::make_pair(std::string(), std::string());
+            return std::make_pair( std::string(), std::string() );
         }
     }
 
@@ -264,13 +363,13 @@ namespace redis
     template <class Connection, class T1_>
     auto sentinel_getMasterAddrByName(Connection& con, boost::system::error_code& ec, T1_ Mastername)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
+        return Detail::sync_universal(con, ec, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, Mastername);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_sentinel_getMasterAddrByName(Connection& con, CompletionToken&& token, T1_ Mastername)
     {
-        return Detail::async_universal(con, token, &prepareRequest_SentinelGetMasterAddrByName<decltype(Mastername)>, &processResult_SentinelGetMasterAddrByName, Mastername);
+        return Detail::async_universal(con, token, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, Mastername);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -278,41 +377,41 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request prepareRequest_SentinelSentinels(T1_ Mastername)
+    Request sentinelSentinelsCommand( T1_ Mastername )
     {
-        Request r("SENTINEL", "sentinels");
+        Request r( "SENTINEL", "sentinels" );
         r << Mastername;
         return r;
     }
 
-    auto processResult_SentinelSentinels(const Response& Data, boost::system::error_code& ec)
+    auto sentinelSentinelsResult( const Response& Data, boost::system::error_code& ec )
     {
         using ResultcontainerInner_t = std::map<std::string, std::string>;
         using Resultcontainer_t = std::list<ResultcontainerInner_t>;
 
         Resultcontainer_t Resultcontainer;
 
-        if (Data.type() == Response::Type::Array && !Data.elements().empty())
+        if( Data.type() == Response::Type::Array && !Data.elements().empty() )
         {
-            for (const auto& Current : Data.elements())
+            for( const auto& Current : Data.elements() )
             {
                 ResultcontainerInner_t NameValueContainer;
-                if (Current->type() == Response::Type::Array && (Current->elements().size() % 2 == 0))
+                if( Current->type() == Response::Type::Array && (Current->elements().size() % 2 == 0) )
                 {
-                    for (auto InnerIterator = Current->elements().cbegin(); InnerIterator < Current->elements().cend(); ++InnerIterator )
+                    for( auto InnerIterator = Current->elements().cbegin(); InnerIterator < Current->elements().cend(); ++InnerIterator )
                     {
                         std::string Name = (*InnerIterator)->string();
                         std::string Value = (*++InnerIterator)->string();
 
-                        NameValueContainer.emplace( std::move(Name), std::move(Value) );
+                        NameValueContainer.emplace( std::move( Name ), std::move( Value ) );
                     }
                 }
-                Resultcontainer.push_back(std::move(NameValueContainer));
+                Resultcontainer.push_back( std::move( NameValueContainer ) );
             }
             return Resultcontainer;
         }
         else
-            ec = ::redis::make_error_code(ErrorCodes::protocol_error);
+            ec = ::redis::make_error_code( ErrorCodes::protocol_error );
 
         return Resultcontainer;
     }
@@ -320,13 +419,13 @@ namespace redis
     template <class Connection, class T1_>
     auto sentinel_sentinels(Connection& con, boost::system::error_code& ec, T1_ Mastername)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
+        return Detail::sync_universal(con, ec, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, Mastername);
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_sentinel_sentinels(Connection& con, CompletionToken&& token, T1_ Mastername)
     {
-        return Detail::async_universal(con, token, &prepareRequest_SentinelSentinels<decltype(Mastername)>, &processResult_SentinelSentinels, Mastername);
+        return Detail::async_universal(con, token, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, Mastername);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -335,32 +434,30 @@ namespace redis
 
     enum class SetOptions { None, SetIfNotExist, SetIfExist };
 
-    namespace Detail {
-        template <class T1_, class T2_>
-        Request prepareRequest_set( T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds, SetOptions Options )
-        {
-            Request r( "SET" );
-            r << Key << Value;
-            if( ExpireTimeInMilliseconds != std::chrono::milliseconds::zero() )
-                r << "PX" << ExpireTimeInMilliseconds.count();
-            if( Options == SetOptions::SetIfNotExist )
-                r << "NX";
-            if( Options == SetOptions::SetIfExist )
-                r << "XX";
-            return r;
-        }
+    template <class T1_, class T2_>
+    Request setCommand( T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None )
+    {
+        Request r( "SET" );
+        r << Key << Value;
+        if( ExpireTimeInMilliseconds != std::chrono::milliseconds::zero() )
+            r << "PX" << ExpireTimeInMilliseconds.count();
+        if( Options == SetOptions::SetIfNotExist )
+            r << "NX";
+        if( Options == SetOptions::SetIfExist )
+            r << "XX";
+        return r;
     }
 
     template <class Connection, class T1_, class T2_>
     auto set(Connection& con, boost::system::error_code& ec, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::sync_universal(con, ec, &prepareRequest_set<decltype(Key), decltype(Value)>, &Detail::processResult_simpleOKResponse, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::sync_universal(con, ec, &setCommand<decltype(Key), decltype(Value)>, &OKResult, Key, Value, ExpireTimeInMilliseconds, Options);
     }
 
     template <class Connection, class CompletionToken, class T1_, class T2_>
     auto async_set(Connection& con, CompletionToken&& token, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::async_universal(con, token, &prepareRequest_set<decltype(Key), decltype(Value)>, &Detail::processResult_simpleOKResponse, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::async_universal(con, token, &setCommand<decltype(Key), decltype(Value)>, &OKResult, Key, Value, ExpireTimeInMilliseconds, Options);
     }
 
 }

@@ -13,7 +13,7 @@ namespace redis
         {
         public:
             Instance( const Instance& ) = default;
-            Instance& operator=( const Instance& ) = default;
+            Instance& operator=( const Instance& ) = delete;
 
             Instance( const SingleHostConnectionManager& shcm ) :
                 SingleHostConnectionManager_( shcm )

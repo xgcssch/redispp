@@ -2,10 +2,10 @@
 
 #include "redisClient/Response.h"
 #include "redisClient/Request.h"
+#include "redisClient/Connection.h"
 #include "redisClient/SingleHostConnectionManager.h"
 #include "redisClient/MultipleHostsConnectionManager.h"
 #include "redisClient/SentinelConnectionManager.h"
-#include "redisClient/Connection.h"
 #include "redisClient/Error.h"
 #include "redisClient/Commands.h"
 
@@ -69,22 +69,65 @@ int main(int argc, char**argv)
 
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
         //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
-        redis::Connection<redis::SentinelConnectionManager> con(io_service, secm);
+        redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
 
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+
+        std::string Key( "2F.STRL.8be94ffe69c8454ca11a06b84e758f2c.murkelpurz" );
+
+        using namespace std::literals;
         boost::system::error_code ec;
-        for( ;;) 
+        for( ;;)
         {
-            redis::ping( con, ec );
-            if( ec )
-                std::cerr << ec.message() << std::endl;
-            else
-            {
-                using namespace std::literals;
+            std::this_thread::sleep_for( 1s );
 
-                auto rh = con.remote_endpoint();
-                std::cerr << "OK " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
-                std::this_thread::sleep_for( 1s );
+            auto R0 = con.transmitCommand( redis::getCommand( Key ), ec );
+            if( !ec )
+            {
             }
+
+            if( R0->top().type() == redis::Response::Type::SimpleString ||
+                R0->top().type() == redis::Response::Type::BulkString
+                )
+            {
+                if( R0->top().asint() > 10 )
+                {
+                    std::cerr << "limit reached: " << R0->top().asint() << std::endl;
+                    continue;
+                }
+            }
+
+            if( !redis::multi( con, ec ) )
+            {
+                std::cerr << "MULTI: " << ec.message() << " - " << con.lastServerError() << std::endl;
+                continue;
+            }
+
+            size_t index = 0;
+            if( R0->top().type() == redis::Response::Type::Null )
+            {
+                con.transmitCommand( redis::setCommand( Key, "0", 60s ), ec );
+                ++index;
+            }
+            auto R1 = con.transmitCommand( redis::incrCommand( Key ), ec );
+            auto Result = con.transmitCommand( redis::execCommand(), ec );
+
+            auto val = redis::incrResult( Result->top()[index], ec );
+
+            auto rh = con.remote_endpoint();
+            std::cerr << "Index now " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
+
+            //auto R1 = con.transmitCommand( redis::incrCommand( "testit" ), ec );
+            //auto R2 = con.transmitCommand( redis::expireCommand( "testit", 10s ), ec );
+            //auto Result = con.transmitCommand( redis::execCommand(), ec );
+            //if( ec )
+            //    continue;
+
+            //auto val = redis::incrResult( Result->top()[0], ec );
+            //auto expireok = redis::expireResult( Result->top()[1], ec );
+
+            //auto rh = con.remote_endpoint();
+            //std::cerr << "OK " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
         }
 
         //boost::system::error_code ec;

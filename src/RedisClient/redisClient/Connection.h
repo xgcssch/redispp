@@ -1,7 +1,9 @@
 #ifndef REDIS_CONNECTION_INCLUDED
 #define REDIS_CONNECTION_INCLUDED
 
+#include "redisClient\Commands.h"
 #include "redisClient\Response.h"
+#include "redisClient\SocketConnectionManager.h"
 
 namespace redis
 {
@@ -11,10 +13,11 @@ namespace redis
         ConnectionBase& operator=(const ConnectionBase&) = delete;
 
     public:
-        ConnectionBase(boost::asio::io_service& io_service) :
+        ConnectionBase(boost::asio::io_service& io_service, int64_t Index ) :
             io_service_(io_service),
             Strand_(io_service),
-            Socket_(io_service)
+            Socket_(io_service),
+            Index_( Index )
         {}
 
         void requestCreated(ResponseHandler::ResponseHandle ResponseHandler)
@@ -32,21 +35,20 @@ namespace redis
         boost::asio::io_service::strand Strand_;
         boost::asio::ip::tcp::socket Socket_;
         std::queue<ResponseHandler::ResponseHandle> _ResponseQueue;
-        bool Subscribed_ = false;
+        int64_t Index_;
+        std::string LastServerError_;
     };
 
     template <class ConnectionManagerType>
     class Connection : private ConnectionBase
     {
     public:
-        typedef std::shared_ptr<Connection> x;
-
-        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager) :
-            ConnectionBase(io_service),
+        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager, int64_t Index=0 ) :
+            ConnectionBase( io_service, Index ),
             ConnectionManagerInstance_(Manager.getInstance())
         {}
 
-        auto command(const Request& Command, boost::system::error_code& ec)
+        auto transmitCommand(const Request& Command, boost::system::error_code& ec)
         {
             auto res = std::make_unique<ResponseHandler>();
             for( ;;)
@@ -57,7 +59,19 @@ namespace redis
                     if( ec )
                         return res;
                     else
-                        Socket_ = std::move( Socket );
+                    {
+                        if( Index_ )
+                        {
+                            Detail::SocketConnectionManager scm( Socket );
+                            Connection<Detail::SocketConnectionManager> CurrentConnection( io_service_, scm );
+
+                            redis::select( CurrentConnection, ec, Index_ );
+
+                            Socket_ = CurrentConnection.passSocket();
+                        }
+                        else
+                            Socket_ = std::move( Socket );
+                    }
                 }
 
                 boost::asio::write( Socket_, Command.bufferSequence(), ec );
@@ -166,6 +180,14 @@ namespace redis
         typename ConnectionManagerType::Instance& instance()
         {
             return ConnectionManagerInstance_;
+        }
+        const std::string& lastServerError() const
+        {
+            return LastServerError_;
+        }
+        void setLastServerError( const std::string& LastServerError )
+        {
+            LastServerError_ = LastServerError;
         }
 
     private:
