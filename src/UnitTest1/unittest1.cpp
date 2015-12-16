@@ -3,6 +3,7 @@
 
 #include "redisClient/Response.h"
 #include "redisClient/Request.h"
+#include "redisClient/Error.h"
 
 #include <iostream>
 
@@ -46,6 +47,45 @@ bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerT
     //    std::cerr << res.top().dump() << std::endl;
 
     return ParseCompleted;
+}
+
+std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string& Teststring, redis::ResponseHandler& res, size_t ExpectedResponses, boost::system::error_code& ec )
+{
+    std::vector<std::shared_ptr<redis::Response>> Responses{ ExpectedResponses };
+
+    boost::asio::const_buffer InputBuffer = boost::asio::buffer( Teststring );
+    size_t InputBufferSize = boost::asio::buffer_size( InputBuffer );
+    size_t RemainingBytes = InputBufferSize;
+    size_t ConsumedBytes = 0;
+
+    std::cerr << "Test: '" << Teststring << "'" << std::endl;
+
+    bool ParseCompleted = false;
+    int ParseId = 0;
+    size_t CurrentResponse = 0;
+    while( InputBufferSize > ConsumedBytes && CurrentResponse < ExpectedResponses )
+    {
+        boost::asio::mutable_buffer ResponseBuffer = res.buffer();
+
+        size_t BytesToCopy = std::min( RemainingBytes, boost::asio::buffer_size( ResponseBuffer ) );
+        boost::asio::buffer_copy( ResponseBuffer, InputBuffer + ConsumedBytes );
+        ConsumedBytes += BytesToCopy;
+        RemainingBytes -= BytesToCopy;
+
+        ParseCompleted = res.dataReceived( BytesToCopy );
+
+        if( ParseCompleted )
+        {
+            do
+            {
+                Responses[CurrentResponse++] = res.spTop();
+            } while( res.commit( true ) );
+        }
+    }
+
+    ec = ::redis::make_error_code( ParseCompleted ? redis::ErrorCodes::success : redis::ErrorCodes::incomplete_response );
+
+    return Responses;
 }
 
 template<typename HandlerType>
@@ -156,6 +196,39 @@ namespace UnitTest1
                     return true;
                 }
                 );
+            }
+        }
+
+        TEST_METHOD( Redis_Response_Parse_Multiple_Responses_Different_Buffersize_CombinedResult )
+        {
+            std::string test1( "*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n" );
+            boost::system::error_code ec;
+
+            for( size_t Buffersize = 1; Buffersize < test1.size();++Buffersize )
+            {
+                redis::ResponseHandler rh{ Buffersize };
+
+                auto r = testitmultiple( test1, rh, 2, ec );
+                Assert::IsTrue( !ec );
+                Assert::IsTrue( r.size() == 2 );
+                auto& r1 = *r[0];
+                Assert::IsTrue( r1.type() == redis::Response::Type::Array );
+                Assert::IsTrue( r1.elements().size() == 3 );
+                Assert::IsTrue( r1[0].type() == redis::Response::Type::BulkString );
+                Assert::IsTrue( r1[0].string() == "subscribe" );
+                Assert::IsTrue( r1[1].type() == redis::Response::Type::BulkString );
+                Assert::IsTrue( r1[1].string() == "first" );
+                Assert::IsTrue( r1[2].type() == redis::Response::Type::Integer );
+                Assert::IsTrue( r1[2].string() == "1" );
+                auto& r2 = *r[1];
+                Assert::IsTrue( r2.type() == redis::Response::Type::Array );
+                Assert::IsTrue( r2.elements().size() == 3 );
+                Assert::IsTrue( r2[0].type() == redis::Response::Type::BulkString );
+                Assert::IsTrue( r2[0].string() == "subscribe" );
+                Assert::IsTrue( r2[1].type() == redis::Response::Type::BulkString );
+                Assert::IsTrue( r2[1].string() == "second" );
+                Assert::IsTrue( r2[2].type() == redis::Response::Type::Integer );
+                Assert::IsTrue( r2[2].string() == "2" );
             }
         }
 

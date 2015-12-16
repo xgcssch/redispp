@@ -12,7 +12,8 @@ namespace redis
     public:
         typedef std::vector<boost::asio::const_buffer> BufferSequence_t;
 
-        Request(const Request&) = delete;
+        Request( const Request& ) = delete;
+        Request( Request&& ) = default;
         Request& operator=(const Request&) = delete;
 
         template<typename... Ts>
@@ -37,12 +38,12 @@ namespace redis
             construct(std::move(Arguments));
         }
 
-        Request(Request&& rhs)
-        {
-            Components_ = std::move(rhs.Components_);
-            Arraycount_ = std::move(rhs.Arraycount_);
-            Strings_ = std::move(rhs.Strings_);
-        }
+        //Request(Request&& rhs)
+        //{
+        //    Components_ = std::move(rhs.Components_);
+        //    Arraycount_ = std::move(rhs.Arraycount_);
+        //    Strings_ = std::move(rhs.Strings_);
+        //}
 
         Request& operator<<(const std::string& Value)
         {
@@ -77,15 +78,15 @@ namespace redis
 
         const BufferSequence_t& bufferSequence() const
         {
-            Arraycount_ = std::string("*") + std::to_string((Components_.size() - 1) / 3) + Strings_.front();
-            Components_[0] = boost::asio::buffer(Arraycount_);
+            Strings_.emplace_back( "*" + std::to_string( (Components_.size() - 1) / 3 ) + Strings_.front() );
+            Components_[0] = boost::asio::buffer( Strings_.back() );
             return Components_;
         }
 
     private:
         mutable BufferSequence_t Components_;
         mutable std::string Arraycount_;
-        std::list<std::string> Strings_;
+        mutable std::list<std::string> Strings_;
 
         static constexpr const char* pCRLF_ = "\r\n";
 

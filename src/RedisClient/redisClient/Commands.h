@@ -17,7 +17,7 @@ namespace redis
         template <class Connection, class RequestT_, class ResponseT_, class ... Types>
         auto sync_universal( Connection& con, boost::system::error_code& ec, RequestT_ pPrepareFunction, ResponseT_ pResponseFunction, Types ... args )
         {
-            auto theResponse = con.transmitCommand( pPrepareFunction( args... ), ec );
+            auto theResponse = con.transmit( pPrepareFunction( args... ), ec );
             if( ec )
                 return decltype(pResponseFunction( theResponse->top(), ec ))();
 

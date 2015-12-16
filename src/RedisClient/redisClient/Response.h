@@ -129,13 +129,15 @@ namespace redis
     public:
         typedef std::shared_ptr<ResponseHandler> ResponseHandle;
         typedef std::vector<char> InternalBufferType;
+        typedef std::list<InternalBufferType> BufferContainerType;
 
         static constexpr size_t DefaultBuffersize = 1024;
 
         ResponseHandler(size_t Buffersize = DefaultBuffersize) :
-            InitialBuffersize_(Buffersize)
+            InitialBuffersize_(Buffersize),
+            spBufferContainer_(std::make_shared<BufferContainerType>())
         {
-            BufferContainer_.emplace_back(Buffersize);
+            spBufferContainer_->emplace_back(Buffersize);
 
             reset();
         }
@@ -218,7 +220,7 @@ namespace redis
                             }
                             if (Items == 0)
                             {
-                                spPart = std::make_shared<Response>(std::vector<std::shared_ptr<Response>>{});
+                                spPart = std::make_shared<Response>(Response::ElementContainer{});
                                 break;
                             }
 
@@ -293,7 +295,7 @@ namespace redis
 
                 Buffersize_ *= 2;
                 size_t MinimumRequiredBuffersize = std::max(BytesToExpect + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_, Buffersize_);
-                BufferContainer_.emplace_back(MinimumRequiredBuffersize);
+                spBufferContainer_->emplace_back(MinimumRequiredBuffersize);
 
                 memcpy(raw_buffer_pointer(), pTopEntryStart, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_);
                 if (ParsedBytesInBuffer_)
@@ -308,22 +310,41 @@ namespace redis
             return FinishedParsing;
         }
 
-        boost::asio::mutable_buffer buffer() {
+        boost::asio::mutable_buffer buffer() 
+        {
+            if( (ParsedBytesInBuffer_ + UnparsedBytesInBuffer_) == Buffersize_ )
+            {
+                spBufferContainer_->emplace_back( Buffersize_ );
+                ParsePosition_ = 0;
+                Offset_ = 0;
+                StartPosition_ = 0;
+                ParsedBytesInBuffer_ = 0;
+            }
+
             return raw_buffer() + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_;
         }
 
-        bool commit()
+        bool commit( bool KeepBuffer = false )
         {
             // Simple case: No valid data in buffer
             if (!UnparsedBytesInBuffer_)
             {
-                reset();
+                if( !KeepBuffer )
+                    reset();
+
+                spTop_.reset();
+                ParsedBytesInBuffer_ = ParsePosition_;
+                ParsePosition_ = 0;
+
                 return false;
             }
             // Still Data available...
 
-            // Free surplus Buffers
-            resetBuffers();
+            if( !KeepBuffer )
+            {
+                // Free surplus Buffers
+                resetBuffers();
+            }
 
             spTop_.reset();
             Offset_ += ParsePosition_;
@@ -342,21 +363,28 @@ namespace redis
         const Response& top() const { return *spTop_; }
         Response& top() { return *spTop_; }
 
+        std::shared_ptr<Response> spTop() {
+            return spTop_;
+        }
+        std::shared_ptr<BufferContainerType> bufferContainer() {
+            return spBufferContainer_;
+        }
+
     private:
         struct ParseStackEntry {
-            std::shared_ptr<std::vector<std::shared_ptr<Response>>> spParts_;
+            std::shared_ptr<Response::ElementContainer> spParts_;
             size_t CurrentEntry_ = 0;
             ParseStackEntry()
             {}
             ParseStackEntry(size_t Items) :
-                spParts_(std::make_shared<std::vector<std::shared_ptr<Response>>>(Items))
+                spParts_(std::make_shared<Response::ElementContainer>(Items))
             {
             }
         };
 
         size_t InitialBuffersize_;
         size_t Buffersize_;
-        std::list<InternalBufferType> BufferContainer_;
+        std::shared_ptr<BufferContainerType> spBufferContainer_;
         std::shared_ptr<Response> spTop_;
 
         std::stack<ParseStackEntry> Partstack_;
@@ -369,11 +397,11 @@ namespace redis
         bool CRLFSeen_;
 
         const InternalBufferType::pointer raw_buffer_pointer() {
-            return BufferContainer_.back().data();
+            return spBufferContainer_->back().data();
         }
 
         boost::asio::mutable_buffer raw_buffer() {
-            return boost::asio::buffer(BufferContainer_.back());
+            return boost::asio::buffer(spBufferContainer_->back());
         }
 
         static off_t local_atoi(const char *p) {
@@ -396,10 +424,10 @@ namespace redis
         void resetBuffers()
         {
             // Free surplus Buffers
-            if (BufferContainer_.size() > 1)
+            if (spBufferContainer_->size() > 1)
             {
-                std::iter_swap(BufferContainer_.begin(), --BufferContainer_.end());
-                BufferContainer_.resize(1);
+                std::iter_swap(spBufferContainer_->begin(), --spBufferContainer_->end());
+                spBufferContainer_->resize(1);
             }
         }
 

@@ -14,7 +14,8 @@ namespace redis
         server_error,
         protocol_error,
         no_data,
-        no_usable_server
+        no_usable_server,
+        incomplete_response
     };
 
     class redis_error_category_imp : public boost::system::error_category
@@ -36,6 +37,7 @@ namespace redis
                 case ErrorCodes::protocol_error: return "Protocol error";
                 case ErrorCodes::no_data: return "No data from server";
                 case ErrorCodes::no_usable_server: return "No usable server found";
+                case ErrorCodes::incomplete_response: return "Not enough data for expected responses";
                 default: return "Unknown error";
             }
         }

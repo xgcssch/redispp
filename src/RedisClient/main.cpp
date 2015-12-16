@@ -81,7 +81,7 @@ int main(int argc, char**argv)
         {
             std::this_thread::sleep_for( 1s );
 
-            auto R0 = con.transmitCommand( redis::getCommand( Key ), ec );
+            auto R0 = con.transmit( redis::getCommand( Key ), ec );
             if( !ec )
             {
             }
@@ -97,37 +97,46 @@ int main(int argc, char**argv)
                 }
             }
 
-            if( !redis::multi( con, ec ) )
-            {
-                std::cerr << "MULTI: " << ec.message() << " - " << con.lastServerError() << std::endl;
-                continue;
-            }
+            redis::Pipeline pip;
+            pip << redis::multiCommand()
+                << redis::setCommand( Key, "0", 60s, redis::SetOptions::SetIfNotExist )
+                << redis::incrCommand( Key )
+                << redis::execCommand()
+                ;
 
-            size_t index = 0;
-            if( R0->top().type() == redis::Response::Type::Null )
-            {
-                con.transmitCommand( redis::setCommand( Key, "0", 60s ), ec );
-                ++index;
-            }
-            auto R1 = con.transmitCommand( redis::incrCommand( Key ), ec );
-            auto Result = con.transmitCommand( redis::execCommand(), ec );
+            auto RAll = con.transmit( pip, ec );
 
-            auto val = redis::incrResult( Result->top()[index], ec );
+            //if( !redis::multi( con, ec ) )
+            //{
+            //    std::cerr << "MULTI: " << ec.message() << " - " << con.lastServerError() << std::endl;
+            //    continue;
+            //}
+
+            //size_t index = 0;
+            //if( R0->top().type() == redis::Response::Type::Null )
+            //{
+            //    con.transmit( redis::setCommand( Key, "0", 60s ), ec );
+            //    ++index;
+            //}
+            //auto R1 = con.transmit( redis::incrCommand( Key ), ec );
+            //auto Result = con.transmit( redis::execCommand(), ec );
+
+            //auto val = redis::incrResult( Result->top()[index], ec );
 
             auto rh = con.remote_endpoint();
-            std::cerr << "Index now " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
+            //std::cerr << "Index now " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
 
-            //auto R1 = con.transmitCommand( redis::incrCommand( "testit" ), ec );
-            //auto R2 = con.transmitCommand( redis::expireCommand( "testit", 10s ), ec );
-            //auto Result = con.transmitCommand( redis::execCommand(), ec );
+            //auto R1 = con.transmit( redis::incrCommand( "testit" ), ec );
+            //auto R2 = con.transmit( redis::expireCommand( "testit", 10s ), ec );
+            //auto Result = con.transmit( redis::execCommand(), ec );
             //if( ec )
             //    continue;
 
-            //auto val = redis::incrResult( Result->top()[0], ec );
+            auto val = redis::incrResult( RAll[3][1], ec );
             //auto expireok = redis::expireResult( Result->top()[1], ec );
 
             //auto rh = con.remote_endpoint();
-            //std::cerr << "OK " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
+            std::cerr << "OK " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
         }
 
         //boost::system::error_code ec;
