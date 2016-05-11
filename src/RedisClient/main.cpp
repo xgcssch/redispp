@@ -1,13 +1,13 @@
 #include "stdafx.h"
 
-#include "redisClient/Response.h"
-#include "redisClient/Request.h"
-#include "redisClient/Connection.h"
-#include "redisClient/SingleHostConnectionManager.h"
-#include "redisClient/MultipleHostsConnectionManager.h"
-#include "redisClient/SentinelConnectionManager.h"
-#include "redisClient/Error.h"
-#include "redisClient/Commands.h"
+#include "redispp/Response.h"
+#include "redispp/Request.h"
+#include "redispp/Connection.h"
+#include "redispp/SingleHostConnectionManager.h"
+#include "redispp/MultipleHostsConnectionManager.h"
+#include "redispp/SentinelConnectionManager.h"
+#include "redispp/Error.h"
+#include "redispp/Commands.h"
 
 #ifndef _DEBUGf
 

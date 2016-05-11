@@ -146,15 +146,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="redisClient\Commands.h" />
-    <ClInclude Include="redisClient\Connection.h" />
-    <ClInclude Include="redisClient\Error.h" />
-    <ClInclude Include="redisClient\MultipleHostsConnectionManager.h" />
-    <ClInclude Include="redisClient\Request.h" />
-    <ClInclude Include="redisClient\Response.h" />
-    <ClInclude Include="redisClient\SentinelConnectionManager.h" />
-    <ClInclude Include="redisClient\SingleHostConnectionManager.h" />
-    <ClInclude Include="redisClient\SocketConnectionManager.h" />
+    <ClInclude Include="redispp\Commands.h" />
+    <ClInclude Include="redispp\Connection.h" />
+    <ClInclude Include="redispp\Error.h" />
+    <ClInclude Include="redispp\multiplehostsconnectionmanager.h" />
+    <ClInclude Include="redispp\Request.h" />
+    <ClInclude Include="redispp\Response.h" />
+    <ClInclude Include="redispp\SentinelConnectionManager.h" />
+    <ClInclude Include="redispp\SingleHostConnectionManager.h" />
+    <ClInclude Include="redispp\SocketConnectionManager.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>

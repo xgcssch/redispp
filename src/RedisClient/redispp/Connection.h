@@ -1,9 +1,9 @@
 #ifndef REDIS_CONNECTION_INCLUDED
 #define REDIS_CONNECTION_INCLUDED
 
-#include "redisClient\Commands.h"
-#include "redisClient\Response.h"
-#include "redisClient\SocketConnectionManager.h"
+#include "redispp\Commands.h"
+#include "redispp\Response.h"
+#include "redispp\SocketConnectionManager.h"
 
 namespace redis
 {

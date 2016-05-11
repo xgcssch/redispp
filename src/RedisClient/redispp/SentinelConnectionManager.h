@@ -7,10 +7,10 @@
 #include <thread>
 #include <chrono>
 
-#include "redisClient/Connection.h"
-#include "redisClient/Commands.h"
-#include "redisClient/MultipleHostsConnectionManager.h"
-#include "redisClient/Error.h"
+#include "redispp/Connection.h"
+#include "redispp/Commands.h"
+#include "redispp/MultipleHostsConnectionManager.h"
+#include "redispp/Error.h"
 
 namespace redis
 {
@@ -18,7 +18,7 @@ namespace redis
     {
     public:
         typedef std::tuple<std::string, int> Host;
-        typedef std::list<Host> HostContainer;
+        typedef MultipleHostsConnectionManager::HostContainer HostContainer;
 
         class Instance
         {
@@ -29,8 +29,9 @@ namespace redis
             Instance( const Instance& ) = default;
             Instance& operator=( const Instance& ) = delete;
 
-            Instance( const MultipleHostsConnectionManager::HostContainer& InitialHosts, const std::string& MasterSet ) :
-                Hosts_( InitialHosts ),
+            Instance( MultipleHostsConnectionManager::HostContainer& InitialHosts, const std::string& MasterSet ) :
+                InitialHosts_( InitialHosts ),
+                Hosts_( InitialHosts.get() ),
                 MasterSet_( MasterSet )
             {}
 
@@ -66,6 +67,7 @@ namespace redis
                             Hosts_.push_back( SentinelConnection.remote_endpoint() );
                             std::for_each( GetSentinelsResult.begin(), GetSentinelsResult.end(), [this]( const auto& SentinelProperties ) { Hosts_.emplace_back( SentinelProperties.at( "ip" ), std::stoi( SentinelProperties.at( "port" ) ) ); } );
 
+                            InitialHosts_.set( Hosts_ );
                             std::cerr << "Sentinel list updated - now " << Hosts_.size()  << " available for next connection" << std::endl;
                         }
 
@@ -111,9 +113,9 @@ namespace redis
             }
 
         private:
-            MultipleHostsConnectionManager::HostContainer Hosts_;
+            MultipleHostsConnectionManager::HostContainer& InitialHosts_;
+            HostContainer::ContainerType Hosts_;
             const std::string& MasterSet_;
-            HostContainer::const_iterator CurrentHostIterator_;
             std::shared_ptr<MultipleHostsConnectionManager> spInnerConnectionManager_;
         };
 
@@ -121,14 +123,14 @@ namespace redis
         SentinelConnectionManager(const SentinelConnectionManager&) = delete;
         SentinelConnectionManager& operator=(const SentinelConnectionManager&) = delete;
 
-        SentinelConnectionManager( boost::asio::io_service& io_service, const HostContainer& Hosts, const std::string& MasterSet ) :
+        SentinelConnectionManager( boost::asio::io_service& io_service, const HostContainer::ContainerType& Hosts, const std::string& MasterSet ) :
             Hosts_(Hosts),
             MasterSet_( MasterSet ),
             Strand_(io_service)
         {
         }
 
-        SentinelConnectionManager(boost::asio::io_service& io_service, HostContainer&& Hosts, const std::string& MasterSet ) :
+        SentinelConnectionManager(boost::asio::io_service& io_service, HostContainer::ContainerType&& Hosts, const std::string& MasterSet ) :
             Hosts_(std::move(Hosts)),
             MasterSet_(MasterSet),
             Strand_(io_service)
@@ -142,7 +144,7 @@ namespace redis
 
     private:
         boost::asio::io_service::strand Strand_;
-        MultipleHostsConnectionManager::HostContainer Hosts_;
+        mutable MultipleHostsConnectionManager::HostContainer Hosts_;
         std::string MasterSet_;
     };
 }

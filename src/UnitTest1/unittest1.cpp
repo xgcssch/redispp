@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "CppUnitTest.h"
 
-#include "redisClient/Response.h"
-#include "redisClient/Request.h"
-#include "redisClient/Error.h"
+#include "redispp/Response.h"
+#include "redispp/Request.h"
+#include "redispp/Error.h"
 
 #include <iostream>
 
