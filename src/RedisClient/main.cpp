@@ -139,7 +139,7 @@ int main(int argc, char**argv)
             std::cerr << "OK " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
         }
 
-        //boost::system::error_code ec;
+        //std::error_code ec;
         //auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");
         //if( ec )
         //    std::cerr << ec.message() << std::endl;
@@ -159,7 +159,7 @@ int main(int argc, char**argv)
         /// Synchronous Version
 #ifdef sdfasdf
         std::string Keyname("simple_loop:count");
-        boost::system::error_code ec;
+        std::error_code ec;
         redis::set(con, ec, Keyname, "0");
 
         std::chrono::time_point<std::chrono::system_clock> start, end;
@@ -225,7 +225,7 @@ int main(int argc, char**argv)
         //boost::asio::io_service::work work(io_service);
         //std::thread thread([&io_service]() { io_service.run(); });
 
-        //boost::system::error_code ec;
+        //std::error_code ec;
         //auto f = con.async_command("PING", boost::asio::use_future);
         //f.wait();
         //std::cerr << f.get() << std::endl;
@@ -237,7 +237,7 @@ int main(int argc, char**argv)
         //boost::asio::spawn(io_service,
         //                   [&](boost::asio::yield_context yield)
         //{
-        //    boost::system::error_code ec;
+        //    std::error_code ec;
         //    auto Data = con.async_command(r, yield[ec]);
         //    if (ec)
         //        std::cerr << ec.message() << std::endl;

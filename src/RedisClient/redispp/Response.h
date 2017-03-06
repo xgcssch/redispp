@@ -98,7 +98,7 @@ namespace redis
         ElementContainer Elements_;
     };
 
-    std::ostream& operator<<(std::ostream &os, const Response::Type& r)
+    inline std::ostream& operator<<(std::ostream &os, const Response::Type& r)
     {
         switch (r) 
         {
@@ -119,7 +119,7 @@ namespace redis
         };
     }
 
-    std::ostream& operator<<(std::ostream &os, const Response& r)
+    inline std::ostream& operator<<(std::ostream &os, const Response& r)
     {
         return os << r.dump();
     }
@@ -185,14 +185,14 @@ namespace redis
 
                         case '$':
                         {
-                            off_t ExpectedBytes = local_atoi(pTopEntryStart + 1);
+                            auto ExpectedBytes = local_atoi(pTopEntryStart + 1);
                             if (ExpectedBytes == -1)
                             {
                                 spPart = std::make_shared<Response>();
                                 break;
                             }
                             ExpectedBytes += 2;
-                            off_t BytesInBuffer = (pEnd - pStart) - 1;
+                            auto BytesInBuffer = (pEnd - pStart) - 1;
                             // Einfachster Fall: Bulkstring ist vollständig im Puffer
                             if (BytesInBuffer >= ExpectedBytes)
                             {

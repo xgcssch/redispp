@@ -1,6 +1,7 @@
 #ifndef REDIS_COMMANDS_INCLUDED
 #define REDIS_COMMANDS_INCLUDED
 
+#include "redispp\Request.h"
 #include "redispp\Response.h"
 #include "redispp\Error.h"
 
@@ -78,7 +79,7 @@ namespace redis
         }
     }
 
-    auto OKResult( const Response& Data, boost::system::error_code& ec )
+    inline auto OKResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() == Response::Type::SimpleString && Data.string() == "OK" )
             return true;
@@ -92,7 +93,7 @@ namespace redis
             }
     }
 
-    int64_t IntResult( const Response& Data, boost::system::error_code& ec )
+    inline int64_t IntResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() == Response::Type::Integer )
             return Data.asint();
@@ -131,7 +132,7 @@ namespace redis
     //                                                     E X E C
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request execCommand()
+    inline Request execCommand()
     {
         return Request("EXEC");
     }
@@ -148,7 +149,7 @@ namespace redis
         return r;
     }
 
-    bool expireResult( const Response& Data, boost::system::error_code& ec )
+    inline bool expireResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() != Response::Type::Integer )
         {
@@ -183,7 +184,7 @@ namespace redis
         return r;
     }
 
-    boost::optional<boost::asio::const_buffer> getResult( const Response& Data, boost::system::error_code& ec )
+    inline boost::optional<boost::asio::const_buffer> getResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() == Response::Type::BulkString )
             return boost::asio::buffer( Data.data(), Data.size() );
@@ -266,7 +267,7 @@ namespace redis
         return r;
     }
 
-    int64_t incrResult( const Response& Data, boost::system::error_code& ec )
+    inline int64_t incrResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() != Response::Type::Integer )
         {
@@ -369,7 +370,7 @@ namespace redis
     //                                                S E L E C T
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request multiCommand()
+    inline Request multiCommand()
     {
         return Request( "MULTI" );
     }
@@ -390,12 +391,12 @@ namespace redis
     //                                                     P I N G
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request pingCommand()
+    inline Request pingCommand()
     {
         return Request( "PING" );
     }
 
-    void pingResult( const Response& Data, boost::system::error_code& ec )
+    inline void pingResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() != Response::Type::SimpleString || Data.string() != "PONG" )
             ec = ::redis::make_error_code( ErrorCodes::protocol_error );
@@ -417,12 +418,12 @@ namespace redis
     //                                                     R O L E
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request roleCommand()
+    inline Request roleCommand()
     {
         return Request( "ROLE" );
     }
 
-    auto roleResult( const Response& Data, boost::system::error_code& ec )
+    inline auto roleResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() != Response::Type::Array || Data.elements().empty() )
             ec = ::redis::make_error_code( ErrorCodes::protocol_error );
@@ -446,7 +447,7 @@ namespace redis
     //                                                S E L E C T
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Request selectCommand( int64_t Index )
+    inline Request selectCommand( int64_t Index )
     {
         Request r( "SELECT" );
         r << Index;
@@ -477,7 +478,7 @@ namespace redis
         return r;
     }
 
-    auto sentinelGetMasterAddrByNameResult( const Response& Data, boost::system::error_code& ec )
+    inline auto sentinelGetMasterAddrByNameResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() == Response::Type::Array && Data.elements().size() == 2 )
             return std::make_pair( Data[0].string(), Data[1].string() );
@@ -517,7 +518,7 @@ namespace redis
         return r;
     }
 
-    auto sentinelSentinelsResult( const Response& Data, boost::system::error_code& ec )
+    inline auto sentinelSentinelsResult( const Response& Data, boost::system::error_code& ec )
     {
         using ResultcontainerInner_t = std::map<std::string, std::string>;
         using Resultcontainer_t = std::list<ResultcontainerInner_t>;

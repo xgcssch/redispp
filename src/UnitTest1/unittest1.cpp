@@ -49,7 +49,8 @@ bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerT
     return ParseCompleted;
 }
 
-std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string& Teststring, redis::ResponseHandler& res, size_t ExpectedResponses, boost::system::error_code& ec )
+template<class ECT_>
+std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string& Teststring, redis::ResponseHandler& res, size_t ExpectedResponses, ECT_& ec )
 {
     std::vector<std::shared_ptr<redis::Response>> Responses{ ExpectedResponses };
 

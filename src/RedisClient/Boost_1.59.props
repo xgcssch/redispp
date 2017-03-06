@@ -4,8 +4,8 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <ExecutablePath>$(ExecutablePath)</ExecutablePath>
-    <IncludePath>$(IncludePath);$(CFG_3RDPARTYLIBS)\boost_1_59_0</IncludePath>
-    <LibraryPath>$(LibraryPath);$(CFG_3RDPARTYLIBS)\boost_1_59_0\lib</LibraryPath>
+    <IncludePath>$(IncludePath);$(CFG_3RDPARTYLIBS)\boost_1_60_0</IncludePath>
+    <LibraryPath>$(LibraryPath);$(CFG_3RDPARTYLIBS)\boost_1_60_0\lib</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>

@@ -56,7 +56,7 @@ namespace redis
                     if( !ec )
                     {
                         auto rh = SentinelConnection.remote_endpoint();
-                        std::cerr << "Using Sentinel " << std::get<0>( rh ) << ":" << std::get<1>( rh ) << std::endl;
+                        //std::cerr << "Using Sentinel " << std::get<0>( rh ) << ":" << std::get<1>( rh ) << std::endl;
 
                         // Update Sentinel List
                         auto GetSentinelsResult = redis::sentinel_sentinels( SentinelConnection, ec, MasterSet_ );
@@ -68,7 +68,7 @@ namespace redis
                             std::for_each( GetSentinelsResult.begin(), GetSentinelsResult.end(), [this]( const auto& SentinelProperties ) { Hosts_.emplace_back( SentinelProperties.at( "ip" ), std::stoi( SentinelProperties.at( "port" ) ) ); } );
 
                             InitialHosts_.set( Hosts_ );
-                            std::cerr << "Sentinel list updated - now " << Hosts_.size()  << " available for next connection" << std::endl;
+                            //std::cerr << "Sentinel list updated - now " << Hosts_.size()  << " available for next connection" << std::endl;
                         }
 
                         SingleHostConnectionManager shcm( GetMasterAddrByNameResult.first, std::stoi( GetMasterAddrByNameResult.second ) );
@@ -86,9 +86,9 @@ namespace redis
                             using namespace std::literals;
 
                             if( ec )
-                                std::cerr << "role returnded " << ec.message() << std::endl;
+                                std::cerr << "role returned " << ec.message() << std::endl;
                             else
-                                std::cerr << "role returnded wrong role " << Role << std::endl;
+                                std::cerr << "role returned wrong role " << Role << std::endl;
 
                             // Wait a short amount of time
                             std::this_thread::sleep_for( 1s );
@@ -97,17 +97,17 @@ namespace redis
                     }
                     else
                     {
-                        std::cerr << "getMasterAddrByName returnded " << ec.message() << std::endl;
+                      //  std::cerr << "getMasterAddrByName returnded " << ec.message() << std::endl;
                     }
 
-                    std::cerr << "Shifting Sentinel Hostslist" << std::endl;
+                    //std::cerr << "Shifting Sentinel Hostslist" << std::endl;
                     SentinelConnection.instance().shiftHosts();
                     --Hostcount;
                 }
 
-                std::cerr << "no more sentinels left to ask" << std::endl;
+                //std::cerr << "no more sentinels left to ask" << std::endl;
 
-                ec = ::redis::make_error_code( ErrorCodes::no_usable_server );
+                ec = ::redis::make_error_code( ErrorCodes::no_more_sentinels );
 
                 return boost::asio::ip::tcp::socket( io_service );
             }
