@@ -149,9 +149,11 @@
     <ClInclude Include="redispp\Commands.h" />
     <ClInclude Include="redispp\Connection.h" />
     <ClInclude Include="redispp\Error.h" />
+    <ClInclude Include="redispp\HashCommands.h" />
     <ClInclude Include="redispp\multiplehostsconnectionmanager.h" />
     <ClInclude Include="redispp\Request.h" />
     <ClInclude Include="redispp\Response.h" />
+    <ClInclude Include="redispp\SentinelCommands.h" />
     <ClInclude Include="redispp\SentinelConnectionManager.h" />
     <ClInclude Include="redispp\SingleHostConnectionManager.h" />
     <ClInclude Include="redispp\SocketConnectionManager.h" />

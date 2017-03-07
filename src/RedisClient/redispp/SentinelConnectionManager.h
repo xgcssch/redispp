@@ -9,6 +9,7 @@
 
 #include "redispp/Connection.h"
 #include "redispp/Commands.h"
+#include "redispp/SentinelCommands.h"
 #include "redispp/MultipleHostsConnectionManager.h"
 #include "redispp/Error.h"
 
@@ -65,18 +66,18 @@ namespace redis
                             Hosts_.clear();
                             // Current Sentinel becomes first in list
                             Hosts_.push_back( SentinelConnection.remote_endpoint() );
-                            std::for_each( GetSentinelsResult.begin(), GetSentinelsResult.end(), [this]( const auto& SentinelProperties ) { Hosts_.emplace_back( SentinelProperties.at( "ip" ), std::stoi( SentinelProperties.at( "port" ) ) ); } );
+                            std::for_each( GetSentinelsResult.second.begin(), GetSentinelsResult.second.end(), [this]( const auto& SentinelProperties ) { Hosts_.emplace_back( SentinelProperties.at( "ip" ), std::stoi( SentinelProperties.at( "port" ) ) ); } );
 
                             InitialHosts_.set( Hosts_ );
                             //std::cerr << "Sentinel list updated - now " << Hosts_.size()  << " available for next connection" << std::endl;
                         }
 
-                        SingleHostConnectionManager shcm( GetMasterAddrByNameResult.first, std::stoi( GetMasterAddrByNameResult.second ) );
+                        SingleHostConnectionManager shcm( GetMasterAddrByNameResult.second.first, std::stoi( GetMasterAddrByNameResult.second.second ) );
                         redis::Connection<redis::SingleHostConnectionManager> MasterConnection( io_service, shcm );
 
                         // Test if the master aggrees with its role
                         auto Role = redis::role( MasterConnection, ec );
-                        if( !ec && Role == "master" )
+                        if( !ec && Role.second == "master" )
                         {
                             // Return the active connection to the caller
                             return MasterConnection.passSocket();
@@ -88,7 +89,7 @@ namespace redis
                             if( ec )
                                 std::cerr << "role returned " << ec.message() << std::endl;
                             else
-                                std::cerr << "role returned wrong role " << Role << std::endl;
+                                std::cerr << "role returned wrong role " << Role.second << std::endl;
 
                             // Wait a short amount of time
                             std::this_thread::sleep_for( 1s );

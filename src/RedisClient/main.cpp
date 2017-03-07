@@ -7,7 +7,9 @@
 #include "redispp/MultipleHostsConnectionManager.h"
 #include "redispp/SentinelConnectionManager.h"
 #include "redispp/Error.h"
+
 #include "redispp/Commands.h"
+#include "redispp/HashCommands.h"
 
 #ifndef _DEBUGf
 

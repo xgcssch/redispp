@@ -51,6 +51,12 @@
     <ClInclude Include="redispp\multiplehostsconnectionmanager.h">
       <Filter>Header Files\redispp</Filter>
     </ClInclude>
+    <ClInclude Include="redispp\HashCommands.h">
+      <Filter>Header Files\redispp</Filter>
+    </ClInclude>
+    <ClInclude Include="redispp\SentinelCommands.h">
+      <Filter>Header Files\redispp</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

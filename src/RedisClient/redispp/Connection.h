@@ -35,12 +35,36 @@ namespace redis
         std::shared_ptr<Response::ElementContainer>           spResponses_;
         std::shared_ptr<ResponseHandler::BufferContainerType> spBufferContainer_;
     public:
-        PipelineResult( const PipelineResult& ) = default;
-        PipelineResult& operator=( const PipelineResult& ) = default;
         PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<ResponseHandler::BufferContainerType>& spBufferContainer ) :
             spResponses_( spResponses ),
             spBufferContainer_( spBufferContainer )
         {}
+        PipelineResult( const PipelineResult& rhs ) :
+            spResponses_( rhs.spResponses_ ),
+            spBufferContainer_( rhs.spBufferContainer_ )
+        {}
+        PipelineResult( const PipelineResult&& rhs ) :
+            spResponses_( std::move(rhs.spResponses_) ),
+            spBufferContainer_( std::move(rhs.spBufferContainer_) )
+        {}
+        PipelineResult& operator=( const PipelineResult& rhs )
+        {
+            if( this != &rhs )
+            {
+                spResponses_ = rhs.spResponses_;
+                spBufferContainer_ = rhs.spBufferContainer_;
+            }
+            return *this;
+        }
+        PipelineResult& operator=( PipelineResult&& rhs )
+        {
+            if( this != &rhs )
+            {
+                spResponses_ = std::move(rhs.spResponses_);
+                spBufferContainer_ = std::move(rhs.spBufferContainer_);
+            }
+            return *this;
+        }
 
         const Response::ElementContainer::value_type::element_type& operator[]( size_t Position )
         {
