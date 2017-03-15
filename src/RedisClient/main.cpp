@@ -19,6 +19,8 @@
 #include <thread>
 #include <chrono>
 
+std::stringstream Out;
+
 namespace po = boost::program_options;
 
 int main(int argc, char**argv)
@@ -71,14 +73,30 @@ int main(int argc, char**argv)
 
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
         //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
-        redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
+        //redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
+        redis::Connection<redis::SentinelConnectionManager> RedisConnection(io_service, secm, 10);
 
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
+        std::string Key( "USR:gerasch.t@al-h.de" );
+        boost::system::error_code ec;
+
+        auto R0 = redis::get( RedisConnection, ec, Key );
+        if( !ec && R0.second )
+        {
+            auto pStart = boost::asio::buffer_cast<const char*>(R0.second.value());
+            auto pEnd = pStart + boost::asio::buffer_size( R0.second.value() );
+
+            int z=9;
+        }
+
+        std::cout << Out.str();
+        
+
+#ifdef sdfasdf
         std::string Key( "2F.STRL.8be94ffe69c8454ca11a06b84e758f2c.murkelpurz" );
 
         using namespace std::literals;
-        boost::system::error_code ec;
         for( ;;)
         {
             std::this_thread::sleep_for( 1s );
@@ -140,6 +158,7 @@ int main(int argc, char**argv)
             //auto rh = con.remote_endpoint();
             std::cerr << "OK " << val << " - " << std::get<0>(rh) << ":" << std::get<1>( rh ) << std::endl;
         }
+#endif
 
         //std::error_code ec;
         //auto xx = redis::sentinel_getMasterAddrByName(con, ec, "almaster");

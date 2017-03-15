@@ -9,8 +9,10 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
+std::stringstream Out;
+
 template<typename HandlerType>
-bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler)
+bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
 {
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
@@ -24,8 +26,9 @@ bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerT
     while (InputBufferSize > ConsumedBytes)
     {
         boost::asio::mutable_buffer ResponseBuffer = res.buffer();
+        auto Buffersize = boost::asio::buffer_size( ResponseBuffer );
 
-        size_t BytesToCopy = std::min(RemainingBytes, boost::asio::buffer_size(ResponseBuffer));
+        size_t BytesToCopy = std::min( { RemainingBytes, Buffersize, TransmissionLimit } );
         boost::asio::buffer_copy(ResponseBuffer, InputBuffer + ConsumedBytes);
         ConsumedBytes += BytesToCopy;
         RemainingBytes -= BytesToCopy;
@@ -242,7 +245,21 @@ namespace UnitTest1
             Assert::IsTrue(testit_complete("$-1\r\n", good));
             Assert::IsTrue(testit_complete("*-1\r\n", good));
             Assert::IsTrue(testit_complete("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", good));
+            //Assert::IsTrue(testit("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", redis::ResponseHandler(2), good ));
             Assert::IsTrue(testit_complete("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n", good));
+        }
+
+        TEST_METHOD(Redis_Response_Parse_With_Toosmall_Buffer)
+        {
+            auto Result = testit("$30\r\n012345678901234567890123456789\r\n", redis::ResponseHandler(5), 
+                                  [](auto ParseId, const auto& myresult) { 
+                if ( myresult.type() != redis::Response::Type::BulkString ) return false;
+                if ( myresult.string() != "012345678901234567890123456789" ) return false;
+                return true;
+            }, 20
+            );
+
+            Assert::IsTrue(Result);
         }
 
         static std::string bufferSequenceToString(const redis::Request::BufferSequence_t& BufferSequence)

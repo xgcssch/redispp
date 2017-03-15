@@ -223,7 +223,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request getCommand( T1_ Key )
+    Request getCommand( const T1_& Key )
     {
         Request r( "GET" );
         r << Key;
@@ -242,15 +242,39 @@ namespace redis
     }
 
     template <class Connection, class T1_>
-    auto get(Connection& con, boost::system::error_code& ec, T1_ Key)
+    auto get(Connection& con, boost::system::error_code& ec, const T1_& Key)
     {
-        return Detail::sync_universal(con, ec, &getCommand<decltype(Key)>, &getResult, Key);
+        return Detail::sync_universal(con, ec, &getCommand<decltype(Key)>, &getResult, std::ref(Key));
     }
 
     template <class Connection, class CompletionToken, class T1_>
     auto async_get(Connection& con, CompletionToken&& token, T1_ Key)
     {
         return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, Key);
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                     D E L
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    template <class T1_>
+    Request delCommand( T1_ Key )
+    {
+        Request r( "DEL" );
+        r << Key;
+        return r;
+    }
+
+    template <class Connection, class T1_>
+    auto del(Connection& con, boost::system::error_code& ec, T1_ Key)
+    {
+        return Detail::sync_universal(con, ec, &delCommand<decltype(Key)>, &IntResult, Key);
+    }
+
+    template <class Connection, class CompletionToken, class T1_>
+    auto async_del(Connection& con, CompletionToken&& token, T1_ Key)
+    {
+        return Detail::async_universal(con, token, &delCommand<decltype(Key)>, &IntResult, Key);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
