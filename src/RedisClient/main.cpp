@@ -90,6 +90,7 @@ int main(int argc, char**argv)
             int z=9;
         }
 
+        std::cout << "OK\n";
         std::cout << Out.str();
         
 

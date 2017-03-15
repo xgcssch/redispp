@@ -8,8 +8,6 @@
 
 #include <iostream>
 
-extern std::stringstream Out;
-
 namespace redis
 {
     class Response
@@ -171,8 +169,6 @@ namespace redis
             size_t BytesReceived
         )
         {
-            Out << "BytesReceived: " << BytesReceived << "\n";
-
             // Currently active boost::asio::mutable_buffer
             boost::asio::mutable_buffer CurrentBuffer = raw_buffer();
 
@@ -180,6 +176,8 @@ namespace redis
             size_t BuffersizeRemaining = boost::asio::buffer_size( CurrentBuffer ) - UnparsedBytesInBuffer_;
             if( BytesReceived > BuffersizeRemaining )
                 BytesReceived = BuffersizeRemaining;
+
+            BuffersizeRemaining -= BytesReceived;
 
             // Pointer to the current element in the buffer
             InternalBufferType::const_pointer pCurrent = boost::asio::buffer_cast<char*>(CurrentBuffer) + Offset_ + ParsePosition_;
@@ -189,6 +187,9 @@ namespace redis
             // Minimum number of bytes expected when there was not enough data to finish the parsing.
             // At least two bytes - CRLF - are expected
             size_t BytesToExpect = 2;
+
+            // Adjust ParsedBytesInBuffer_
+            ParsedBytesInBuffer_ -= ParsedBytesInBufferAdjustment_;
 
             // Indicator for the completion of the parse at the topmost level
             bool ToplevelFinished = false;
@@ -240,12 +241,10 @@ namespace redis
                             BulkstringSize += 2;
                             // unparsed bytes remaining in the current chunk
                             auto RemainingBytes = (pEnd - pCurrent) - 1;
-                            Out << "RemainingBytes: " << RemainingBytes << " BulkstringSize:" << BulkstringSize << "\n";
+
                             // Simple case: bulkstring is complete in buffer
                             if( RemainingBytes >= BulkstringSize )
                             {
-                                Out << "Fits in buffer - RemainingBytes >= BulkstringSize\n";
-
                                 // check \r\n
                                 spPart = std::make_shared<Response>( Response::Type::BulkString, pCurrent + 1, BulkstringSize - 2 );
                                 pCurrent += BulkstringSize;
@@ -257,11 +256,9 @@ namespace redis
                             // Use all remaining bytes available - this forces the end of the parse loop
                             pCurrent += RemainingBytes;
 
-                            // compensate for the increment in the outer loop! Therefor decrement one
-                            //if ( RemainingBytes )
-                            //    ParsedBytesInBuffer_ += RemainingBytes - 1;
                             ParsedBytesInBuffer_ += RemainingBytes;
                             ParsePosition_--;
+                            ParsedBytesInBufferAdjustment_ = 1 + RemainingBytes;
                             break;
                         }
 
@@ -370,49 +367,42 @@ namespace redis
                         CRSeen_ = true;
             } // for
 
-            // the parse is finished when there are no further parts pending on the stack and a CRLF combination has been seen
+              // the parse is finished when there are no further parts pending on the stack and a CRLF combination has been seen
             bool FinishedParsing = Partstack_.empty() && CRLFSeen_;
 
             // update count
             UnparsedBytesInBuffer_ = pEnd - pCurrent;
-
-            Out << "Finished: " << FinishedParsing << " unparsed " << UnparsedBytesInBuffer_ << "\n";
 
             // if parsing is not finished at this point, there are two possibilities:
             // either is the number of bytes in the current chunk not sufficient enough to fullfill the request
             // or the current buffer is not large enough to hold the total number of expected bytes
             if( !FinishedParsing )
             {
-                Out << "Buffersize: " << Buffersize_ << " Offset:" << Offset_ << " StartPosition:" << StartPosition_ << "\n";
-
-                //auto BytesRemainingInBuffer = Buffersize_ - ( ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ );
-
-                //if ( BytesRemainingInBuffer )
-                Buffersize_ *= 2;
-
-                Buffersize_ = std::max( BytesToExpect + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_, Buffersize_ );
-
-                // pointer to the data in the old buffer
-                InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + Offset_ + StartPosition_;
-
-                // Add a new buffer with the computed size
-                spBufferContainer_->emplace_back( Buffersize_ );
-
-                // copy the still needed data from the old buffer to the new buffer
-                memcpy( raw_buffer_pointer(), pTopEntryStart, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ );
-
-                // if there is already parsed data, then correct the latest parsed position
-                if( ParsedBytesInBuffer_ )
+                // Is no buffer left or will the expected data not fit in the current buffer?
+                //if( !BuffersizeRemaining || BuffersizeRemaining < BytesToExpect )
                 {
-                    ParsePosition_ -= StartPosition_;
+                    Buffersize_ += 1024;
+
+                    auto RequiredBuffersize = std::max( BytesToExpect + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_, Buffersize_ );
+
+                    // pointer to the data in the old buffer
+                    InternalBufferType::const_pointer pTopEntryStart = raw_buffer_pointer() + Offset_ + StartPosition_;
+
+                    // Add a new buffer with the computed size
+                    spBufferContainer_->emplace_back( RequiredBuffersize );
+
+                    // copy the still needed data from the old buffer to the new buffer
+                    memcpy( raw_buffer_pointer(), pTopEntryStart, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ );
+
+                    // if there is already parsed data, then correct the latest parsed position
+                    if( ParsedBytesInBuffer_ )
+                        ParsePosition_ -= StartPosition_;
+                    else
+                        ParsePosition_ = 0;
+
+                    Offset_ = 0;
+                    StartPosition_ = 0;
                 }
-                else
-                    ParsePosition_ = 0;
-
-                Out << "Buffersize: " << Buffersize_ << " ParsePosition_:" << ParsePosition_ << "\n";
-
-                Offset_ = 0;
-                StartPosition_ = 0;
             }
 
             return FinishedParsing;
@@ -449,8 +439,8 @@ namespace redis
 
                 return false;
             }
-            // Still Data available...
 
+            // Still Data available...
             if( !KeepBuffer )
             {
                 // Free surplus Buffers
@@ -474,18 +464,12 @@ namespace redis
         }
 
         // returns the topmost parsed result
-        const Response& top() const {
-            return *spTop_;
-        }
-// returns the topmost parsed result
-//Response& top() { return *spTop_; }
+        const Response& top() const { return *spTop_; }
 
-// After a completed parse this returns the toplevel Response element.
-        std::shared_ptr<Response> spTop() {
-            return spTop_;
-        }
+        // After a completed parse this returns the toplevel Response element.
+        std::shared_ptr<Response> spTop() { return spTop_; }
 
-//std::shared_ptr<BufferContainerType> bufferContainer() { return spBufferContainer_; }
+        std::shared_ptr<BufferContainerType> bufferContainer() { return spBufferContainer_; }
 
     private:
         // Entity representing an entry on the parsestack
@@ -527,6 +511,8 @@ namespace redis
         InternalBufferType::size_type ParsedBytesInBuffer_;
         // Number of bytes not parsed in the active buffer
         InternalBufferType::size_type UnparsedBytesInBuffer_;
+        // Number of bytes used to adjust ParsedBytesInBuffer_ during bulkstring reception
+        size_t ParsedBytesInBufferAdjustment_;
 
         // Indikator if the last byte seen was an CR
         bool CRSeen_;
@@ -592,6 +578,7 @@ namespace redis
             ParsedBytesInBuffer_ = 0;
             UnparsedBytesInBuffer_ = 0;
             Offset_ = 0;
+            ParsedBytesInBufferAdjustment_ = 0;
         }
     };
 }
