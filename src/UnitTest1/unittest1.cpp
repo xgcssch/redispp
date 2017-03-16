@@ -246,6 +246,7 @@ namespace UnitTest1
             Assert::IsTrue(testit_complete("*-1\r\n", good));
             Assert::IsTrue(testit_complete("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", good));
             Assert::IsTrue(testit_complete("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n", good));
+
             //Assert::IsTrue(testit("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", redis::ResponseHandler(2), good ));
             //Assert::IsTrue(testit("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", redis::ResponseHandler(1), good ));
         }
@@ -263,15 +264,14 @@ namespace UnitTest1
                 );
                 Assert::IsTrue(Result);
             }
-            //auto Result = testit_complete("$30\r\n012345678901234567890123456789\r\n", 
+            //auto Result = testit("$30\r\n012345678901234567890123456789\r\n", redis::ResponseHandler(5), 
             //                      [](auto ParseId, const auto& myresult) { 
             //    if ( myresult.type() != redis::Response::Type::BulkString ) return false;
             //    if ( myresult.string() != "012345678901234567890123456789" ) return false;
             //    return true;
-            //}
+            //}, 5
             //);
-
-
+            //Assert::IsTrue(Result);
         }
 
         static std::string bufferSequenceToString(const redis::Request::BufferSequence_t& BufferSequence)
