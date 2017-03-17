@@ -1,5 +1,8 @@
-#ifndef REDIS_SOCKETCONNECTIONMANAGER_INCLUDED
-#define REDIS_SOCKETCONNECTIONMANAGER_INCLUDED
+#ifndef REDISPP_SOCKETCONNECTIONMANAGER_INCLUDED
+#define REDISPP_SOCKETCONNECTIONMANAGER_INCLUDED
+
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
 
 #include <string>
 #include <boost\asio.hpp>

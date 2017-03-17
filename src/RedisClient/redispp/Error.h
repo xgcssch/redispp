@@ -1,7 +1,11 @@
-#ifndef REDIS_ERROR_INCLUDED
-#define REDIS_ERROR_INCLUDED
+#ifndef REDISPP_ERROR_INCLUDED
+#define REDISPP_ERROR_INCLUDED
+
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
 
 #include <system_error>
+#include <boost/system/system_error.hpp>
 
 namespace redis
 {
@@ -9,8 +13,6 @@ namespace redis
     using base_error_condition = boost::system::error_condition;
     using base_error_code = boost::system::error_code;
 
-    //const base_error_category & get_redis_error_category() noexcept;
-    //const base_error_category & redis_error_category = get_redis_error_category();
     inline const base_error_category& redis_error_category() _NOEXCEPT;
 
     enum class ErrorCodes
@@ -49,12 +51,6 @@ namespace redis
             }
         }
     };
-
-    //inline const base_error_category& get_redis_error_category() noexcept
-    //{
-    //    static const redis_error_category_imp redisCategory;
-    //    return redisCategory;
-    //}
 
     inline base_error_code make_error_code(ErrorCodes e)
     {

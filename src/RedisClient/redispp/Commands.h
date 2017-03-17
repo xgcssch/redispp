@@ -1,14 +1,14 @@
-#ifndef REDIS_COMMANDS_INCLUDED
-#define REDIS_COMMANDS_INCLUDED
+#ifndef REDISPP_COMMANDS_INCLUDED
+#define REDISPP_COMMANDS_INCLUDED
 
 // Copyright Soenke K. Schau 2016-2017
 // See accompanying file LICENSE.txt for Lincense
 
-#include "redispp\Request.h"
-#include "redispp\Response.h"
-#include "redispp\Error.h"
+#include "redispp/Request.h"
+#include "redispp/Response.h"
+#include "redispp/Error.h"
 
-#include <boost\optional.hpp>
+#include <boost/optional.hpp>
 
 #include <chrono>
 #include <list>

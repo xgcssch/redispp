@@ -12,7 +12,7 @@ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 std::stringstream Out;
 
 template<typename HandlerType>
-bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
+bool testit(const std::string& Teststring, redis::ResponseHandler<>& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
 {
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
@@ -53,7 +53,7 @@ bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerT
 }
 
 template<class ECT_>
-std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string& Teststring, redis::ResponseHandler& res, size_t ExpectedResponses, ECT_& ec )
+std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string& Teststring, redis::ResponseHandler<>& res, size_t ExpectedResponses, ECT_& ec )
 {
     std::vector<std::shared_ptr<redis::Response>> Responses{ ExpectedResponses };
 
@@ -92,23 +92,23 @@ std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string&
     return Responses;
 }
 
-template<typename HandlerType>
+template<typename HandlerType, class T_=redis::NullStream>
 bool testit_complete(const std::string& Teststring, HandlerType&& handler)
 {
     bool Result = true;
     for (size_t Buffersize = 1; Buffersize <= Teststring.size(); ++Buffersize)
     {
-        Result = testit(Teststring, redis::ResponseHandler(Buffersize), handler);
+        Result = testit(Teststring, redis::ResponseHandler<T_>(Buffersize), handler);
         if (!Result)
         {
             std::cerr << "Failure at test " << Teststring << " Buffersize: " << Buffersize << std::endl;
             return false;
         }
     }
-    Result = testit(Teststring, redis::ResponseHandler(), handler);
+    Result = testit(Teststring, redis::ResponseHandler<T_>(), handler);
     if (!Result)
     {
-        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler::DefaultBuffersize << std::endl;
+        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler<T_>::DefaultBuffersize << std::endl;
         return false;
     }
     return Result;
@@ -126,7 +126,7 @@ namespace UnitTest1
         {
             std::string test1("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n");
 
-            redis::ResponseHandler rh;
+            redis::ResponseHandler<> rh;
 
             testit(test1, rh,
                    [](auto ParseId, const auto& myresult)
@@ -167,7 +167,7 @@ namespace UnitTest1
 
             for (size_t Buffersize = 1; Buffersize < test1.size();++Buffersize)
             {
-                redis::ResponseHandler rh(Buffersize);
+                redis::ResponseHandler<> rh(Buffersize);
 
                 testit(test1, rh,
                        [](auto ParseId, const auto& myresult)
@@ -210,7 +210,7 @@ namespace UnitTest1
 
             for( size_t Buffersize = 1; Buffersize < test1.size();++Buffersize )
             {
-                redis::ResponseHandler rh{ Buffersize };
+                redis::ResponseHandler<> rh{ Buffersize };
 
                 auto r = testitmultiple( test1, rh, 2, ec );
                 Assert::IsTrue( !ec );
@@ -255,7 +255,7 @@ namespace UnitTest1
         {
             for(auto MaxBuffer = 1; MaxBuffer < 30; ++MaxBuffer )
             {
-                auto Result = testit("$30\r\n012345678901234567890123456789\r\n", redis::ResponseHandler(5), 
+                auto Result = testit("$30\r\n012345678901234567890123456789\r\n", redis::ResponseHandler<>(5), 
                                       [](auto ParseId, const auto& myresult) { 
                     if ( myresult.type() != redis::Response::Type::BulkString ) return false;
                     if ( myresult.string() != "012345678901234567890123456789" ) return false;

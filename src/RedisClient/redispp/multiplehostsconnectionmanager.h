@@ -1,13 +1,16 @@
-#ifndef REDIS_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
-#define REDIS_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
+#ifndef REDISPP_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
+#define REDISPP_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
+
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
 
 #include <string>
 #include <list>
 #include <memory>
 #include <shared_mutex>
 
-#include <boost\asio.hpp>
-#include <boost\bind.hpp>
+#include <boost/asio.hpp>
+#include <boost/bind.hpp>
 
 #include "redispp/SingleHostConnectionManager.h"
 #include "redispp/Error.h"

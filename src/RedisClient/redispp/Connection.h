@@ -1,9 +1,12 @@
-#ifndef REDIS_CONNECTION_INCLUDED
-#define REDIS_CONNECTION_INCLUDED
+#ifndef REDISPP_CONNECTION_INCLUDED
+#define REDISPP_CONNECTION_INCLUDED
 
-#include "redispp\Commands.h"
-#include "redispp\Response.h"
-#include "redispp\SocketConnectionManager.h"
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
+
+#include "redispp/Commands.h"
+#include "redispp/Response.h"
+#include "redispp/SocketConnectionManager.h"
 
 namespace redis
 {
@@ -30,12 +33,13 @@ namespace redis
         size_t requestCount() const { return Requests_.size(); }
     };
 
+    template<class T_>
     class PipelineResult
     {
         std::shared_ptr<Response::ElementContainer>           spResponses_;
-        std::shared_ptr<ResponseHandler::BufferContainerType> spBufferContainer_;
+        std::shared_ptr<typename ResponseHandler<T_>::BufferContainerType> spBufferContainer_;
     public:
-        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<ResponseHandler::BufferContainerType>& spBufferContainer ) :
+        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<T_>::BufferContainerType>& spBufferContainer ) :
             spResponses_( spResponses ),
             spBufferContainer_( spBufferContainer )
         {}
@@ -72,7 +76,8 @@ namespace redis
         }
     };
 
-    class ConnectionBase : std::enable_shared_from_this<ConnectionBase>
+    template<class T_>
+    class ConnectionBase : std::enable_shared_from_this<ConnectionBase<T_> >
     {
         ConnectionBase(const ConnectionBase&) = delete;
         ConnectionBase& operator=(const ConnectionBase&) = delete;
@@ -85,7 +90,7 @@ namespace redis
             Index_( Index )
         {}
 
-        void requestCreated(ResponseHandler::ResponseHandle ResponseHandler)
+        void requestCreated(typename ResponseHandler<T_>::ResponseHandle ResponseHandler)
         {
             _ResponseQueue.push(ResponseHandler);
         }
@@ -99,13 +104,13 @@ namespace redis
         boost::asio::io_service& io_service_;
         boost::asio::io_service::strand Strand_;
         boost::asio::ip::tcp::socket Socket_;
-        std::queue<ResponseHandler::ResponseHandle> _ResponseQueue;
+        std::queue<typename ResponseHandler<T_>::ResponseHandle> _ResponseQueue;
         int64_t Index_;
         std::string LastServerError_;
     };
 
-    template <class ConnectionManagerType>
-    class Connection : private ConnectionBase
+    template <class ConnectionManagerType, class T_=NullStream>
+    class Connection : private ConnectionBase<T_>
     {
     public:
         Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager, int64_t Index=0 ) :
@@ -115,7 +120,7 @@ namespace redis
 
         auto transmit( const Request& Command, boost::system::error_code& ec )
         {
-            auto res = std::make_unique<ResponseHandler>();
+            auto res = std::make_unique<typename ResponseHandler<T_>>();
             for( ;;)
             {
                 if( !Socket_.is_open() )
@@ -166,9 +171,9 @@ namespace redis
             return res;
         }
 
-        PipelineResult transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
+        PipelineResult<T_> transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
         {
-            ResponseHandler res;
+            ResponseHandler<T_> res;
             size_t ExpectedResponses = thePipeline.requestCount();
             auto spResponses = std::make_shared<std::vector<std::shared_ptr<redis::Response>>>( ExpectedResponses );
 
@@ -263,7 +268,7 @@ namespace redis
         }
 
         template <class	ConnectHandler>
-        void internalReceiveData(std::shared_ptr<ResponseHandler>& spServerResponse, ConnectHandler& handler)
+        void internalReceiveData(std::shared_ptr<ResponseHandler<T_>>& spServerResponse, ConnectHandler& handler)
         {
             Socket_.async_read_some(boost::asio::buffer(spServerResponse->buffer()),
                                     [this, spServerResponse, handler](const boost::system::error_code& ec, std::size_t BytesReceived) mutable
@@ -291,7 +296,7 @@ namespace redis
                     handler(ec, Response());
                 else
                 {
-                    auto spServerResponse = std::make_shared<ResponseHandler>();
+                    auto spServerResponse = std::make_shared<ResponseHandler<T_>>();
 
                     internalReceiveData(std::move(spServerResponse), std::forward<ConnectHandler>(handler));
                 }

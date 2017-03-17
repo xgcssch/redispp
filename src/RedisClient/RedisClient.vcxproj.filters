@@ -57,6 +57,9 @@
     <ClInclude Include="redispp\SentinelCommands.h">
       <Filter>Header Files\redispp</Filter>
     </ClInclude>
+    <ClInclude Include="redispp.h">
+      <Filter>Header Files\redispp</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

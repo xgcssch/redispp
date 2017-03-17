@@ -146,6 +146,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="redispp.h" />
     <ClInclude Include="redispp\Commands.h" />
     <ClInclude Include="redispp\Connection.h" />
     <ClInclude Include="redispp\Error.h" />

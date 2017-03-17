@@ -23,8 +23,8 @@ std::stringstream Out;
 
 namespace po = boost::program_options;
 
-template<typename HandlerType>
-bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
+template<typename HandlerType, class T_>
+bool testit(const std::string& Teststring, redis::ResponseHandler<T_>& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
 {
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
@@ -39,8 +39,6 @@ bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerT
     {
         boost::asio::mutable_buffer ResponseBuffer = res.buffer();
         auto Buffersize = boost::asio::buffer_size( ResponseBuffer );
-
-        std::cerr << "buffersize out:" << Buffersize << "\n";
 
         size_t BytesToCopy = std::min( { RemainingBytes, Buffersize, TransmissionLimit } );
         boost::asio::buffer_copy(ResponseBuffer, InputBuffer + ConsumedBytes);
@@ -83,7 +81,8 @@ int main(int argc, char**argv)
         //);
         //auto Result = testit("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n", redis::ResponseHandler(1), 
         //auto Result = testit("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", redis::ResponseHandler(1), 
-        auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler(7), 
+        //auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler<std::ostream&>(7, std::ref(std::cerr) ), 
+        auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler<>(7), 
 
                               []( auto ParseId, const auto& myresult ) {
             return true;
@@ -125,7 +124,7 @@ int main(int argc, char**argv)
                 MultipleHostsConnectionManager::Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }
             }
         );
-        redis::SentinelConnectionManager secm( io_service,
+        redis::SentinelConnectionManager<> secm( io_service,
             {
                 MultipleHostsConnectionManager::Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 }/*,
                 MultipleHostsConnectionManager::Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
@@ -136,7 +135,7 @@ int main(int argc, char**argv)
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
         //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
         //redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
-        redis::Connection<redis::SentinelConnectionManager> RedisConnection(io_service, secm, 10);
+        redis::Connection<redis::SentinelConnectionManager<>> RedisConnection(io_service, secm, 10);
 
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 

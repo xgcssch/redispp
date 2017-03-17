@@ -1,9 +1,13 @@
-#ifndef REDIS_REQUEST_INCLUDED
-#define REDIS_REQUEST_INCLUDED
+#ifndef REDISPP_REQUEST_INCLUDED
+#define REDISPP_REQUEST_INCLUDED
+
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
 
 #include <vector>
 #include <string>
-#include <boost\asio\buffer.hpp>
+
+#include <boost/asio/buffer.hpp>
 
 namespace redis
 {

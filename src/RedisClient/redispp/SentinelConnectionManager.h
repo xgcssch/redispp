@@ -1,5 +1,8 @@
-#ifndef REDIS_SENTINELSCONNECTIONMANAGER_INCLUDED
-#define REDIS_SENTINELSCONNECTIONMANAGER_INCLUDED
+#ifndef REDISPP_SENTINELSCONNECTIONMANAGER_INCLUDED
+#define REDISPP_SENTINELSCONNECTIONMANAGER_INCLUDED
+
+// Copyright Soenke K. Schau 2016-2017
+// See accompanying file LICENSE.txt for Lincense
 
 #include <string>
 #include <list>
@@ -15,6 +18,7 @@
 
 namespace redis
 {
+    template<class T_=NullStream>
     class SentinelConnectionManager
     {
     public:
@@ -39,7 +43,7 @@ namespace redis
             boost::asio::ip::tcp::socket getConnectedSocket( boost::asio::io_service& io_service, boost::system::error_code& ec )
             {
                 MultipleHostsConnectionManager mhcm( io_service, Hosts_ );
-                redis::Connection<redis::MultipleHostsConnectionManager> SentinelConnection( io_service, mhcm );
+                redis::Connection<redis::MultipleHostsConnectionManager, T_> SentinelConnection( io_service, mhcm );
 
                 std::chrono::time_point<std::chrono::steady_clock> ConnectionStartTime;
                 ConnectionStartTime = std::chrono::steady_clock::now();
