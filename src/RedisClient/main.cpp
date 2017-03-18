@@ -69,15 +69,22 @@ bool testit(const std::string& Teststring, redis::ResponseHandler<DebugStreamTyp
 
 class CErrNotificationSink
 {
+    std::stringstream ss_;
 public:
+   
+    ~CErrNotificationSink()
+    {
+        std::cerr << ss_.str();
+    }
+
     template <typename... Args>
-    void debug( const Args & ... args ) { std::cerr << "Debug:   " << fmt::format( args... ) << std::endl; }
+    void debug( const Args & ... args ) { ss_ << "Debug:   " << fmt::format( args... ) << std::endl; }
     template <typename... Args>
-    void trace( const Args & ... args ) { std::cerr << "Trace:   " << fmt::format( args... ) << std::endl; }
+    void trace( const Args & ... args ) { ss_ << "Trace:   " << fmt::format( args... ) << std::endl; }
     template <typename... Args>
-    void warning( const Args & ... args ) { std::cerr << "Warning: " << fmt::format( args... ) << std::endl; }
+    void warning( const Args & ... args ) { ss_ << "Warning: " << fmt::format( args... ) << std::endl; }
     template <typename... Args>
-    void error( const Args & ... args ) { std::cerr << "Error:   " << fmt::format( args... ) << std::endl; }
+    void error( const Args & ... args ) { ss_ << "Error:   " << fmt::format( args... ) << std::endl; }
 };
 
 
@@ -144,7 +151,7 @@ int main(int argc, char**argv)
             },
             sink
         );
-        redis::SentinelConnectionManager<redis::NullDebugStream,CErrNotificationSink> secm( io_service,
+        redis::SentinelConnectionManager<redis::NullDebugStream,CErrNotificationSink&> secm( io_service,
             {
                 Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 }/*,
                 Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
@@ -158,7 +165,7 @@ int main(int argc, char**argv)
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
         //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
         //redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
-        redis::Connection<redis::SentinelConnectionManager<redis::NullDebugStream,CErrNotificationSink>> RedisConnection(io_service, secm, 10);
+        redis::Connection<redis::SentinelConnectionManager<NullDebugStream,CErrNotificationSink&>,NullDebugStream, CErrNotificationSink&> RedisConnection(io_service, secm, 10, sink);
 
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 

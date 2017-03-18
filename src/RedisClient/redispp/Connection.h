@@ -135,11 +135,11 @@ namespace redis
                         if( Index_ )
                         {
                             Detail::SocketConnectionManager scm( Socket );
-                            Connection<Detail::SocketConnectionManager> CurrentConnection( io_service_, scm );
-
-                            NotificationSink_.trace( "Connection::transmit: selected database '{}'", Index_ );
+                            Connection<Detail::SocketConnectionManager, DebugStreamType_, NotificationSinkType_> CurrentConnection( io_service_, scm, 0, NotificationSink_ );
 
                             redis::select( CurrentConnection, ec, Index_ );
+
+                            NotificationSink_.trace( "Connection::transmit: selected database '{}'", Index_ );
 
                             Socket_ = CurrentConnection.passSocket();
                         }
