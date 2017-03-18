@@ -155,7 +155,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request clientSetnameRequest( const T1_ ConnectionName )
+    Request clientSetnameRequest( const T1_& ConnectionName )
     {
         Request r( "CLIENT", "SETNAME" );
         r << ConnectionName;
@@ -163,15 +163,15 @@ namespace redis
     }
 
     template <class Connection, class T1_>
-    auto clientSetname( Connection& con, boost::system::error_code& ec, T1_ ConnectionName )
+    auto clientSetname( Connection& con, boost::system::error_code& ec, const T1_& ConnectionName )
     {
-        return Detail::sync_universal( con, ec, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, ConnectionName );
+        return Detail::sync_universal( con, ec, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, std::ref(ConnectionName) );
     }
 
     template <class Connection, class CompletionToken, class T1_>
-    auto async_clientSetname( Connection& con, CompletionToken&& token, T1_ ConnectionName )
+    auto async_clientSetname( Connection& con, CompletionToken&& token, const T1_& ConnectionName )
     {
-        return Detail::async_universal( con, token, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, ConnectionName );
+        return Detail::async_universal( con, token, &clientSetnameRequest<decltype(ConnectionName)>, &OKResult, std::ref(ConnectionName) );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -188,7 +188,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request expireCommand( T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    Request expireCommand( const T1_& Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
     {
         Request r( "PEXPIRE" );
         r << Key << ExpireTimeInMilliseconds.count();
@@ -207,15 +207,15 @@ namespace redis
     }
 
     template <class Connection, class T1_>
-    auto expire( Connection& con, boost::system::error_code& ec, T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    auto expire( Connection& con, boost::system::error_code& ec, const T1_& Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
     {
-        return Detail::sync_universal( con, ec, &expireCommand<decltype(Key)>, &expireResult, Key, ExpireTimeInMilliseconds );
+        return Detail::sync_universal( con, ec, &expireCommand<decltype(Key)>, &expireResult, std::ref(Key), ExpireTimeInMilliseconds );
     }
 
     template <class Connection, class CompletionToken, class T1_>
-    auto async_expire( Connection& con, CompletionToken&& token, T1_ Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
+    auto async_expire( Connection& con, CompletionToken&& token, const T1_& Key, std::chrono::milliseconds ExpireTimeInMilliseconds )
     {
-        return Detail::async_universal_void( con, token, &expireCommand<decltype(Key), &expireResult, Key, ExpireTimeInMilliseconds );
+        return Detail::async_universal_void( con, token, &expireCommand<decltype(Key), &expireResult, std::ref(Key), ExpireTimeInMilliseconds );
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -250,7 +250,7 @@ namespace redis
     template <class Connection, class CompletionToken, class T1_>
     auto async_get(Connection& con, CompletionToken&& token, T1_ Key)
     {
-        return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, Key);
+        return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, std::ref(Key));
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -258,7 +258,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request delCommand( T1_ Key )
+    Request delCommand( const T1_& Key )
     {
         Request r( "DEL" );
         r << Key;
@@ -266,15 +266,15 @@ namespace redis
     }
 
     template <class Connection, class T1_>
-    auto del(Connection& con, boost::system::error_code& ec, T1_ Key)
+    auto del(Connection& con, boost::system::error_code& ec, const T1_& Key)
     {
-        return Detail::sync_universal(con, ec, &delCommand<decltype(Key)>, &IntResult, Key);
+        return Detail::sync_universal(con, ec, &delCommand<decltype(Key)>, &IntResult, std::ref(Key));
     }
 
     template <class Connection, class CompletionToken, class T1_>
-    auto async_del(Connection& con, CompletionToken&& token, T1_ Key)
+    auto async_del(Connection& con, CompletionToken&& token, const T1_& Key)
     {
-        return Detail::async_universal(con, token, &delCommand<decltype(Key)>, &IntResult, Key);
+        return Detail::async_universal(con, token, &delCommand<decltype(Key)>, &IntResult, std::ref(Key));
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -282,7 +282,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request incrCommand( T1_ Key )
+    Request incrCommand( const T1_& Key )
     {
         Request r( "INCR" );
         r << Key;
@@ -291,16 +291,16 @@ namespace redis
 
     // Call Redis INCR Command syncronously taking a Key and returning an int64_t result
     template <class Connection, class T1_>
-    auto incr(Connection& con, boost::system::error_code& ec, T1_ Key)
+    auto incr(Connection& con, boost::system::error_code& ec, const T1_& Key)
     {
-        return Detail::sync_universal(con, ec, &incrCommand<decltype(Key)>, &incrResult, Key);
+        return Detail::sync_universal(con, ec, &incrCommand<decltype(Key)>, &incrResult, std::ref(Key));
     }
 
     // Call Redis INCR Command asyncronously taking a Key and returning an int64_t result
     template <class Connection, class CompletionToken, class T1_>
-    auto async_incr(Connection& con, CompletionToken&& token, T1_ Key)
+    auto async_incr(Connection& con, CompletionToken&& token, const T1_& Key)
     {
-        return Detail::async_universal(con, token, &incrCommand<decltype(Key)>, &incrResult, Key);
+        return Detail::async_universal(con, token, &incrCommand<decltype(Key)>, &incrResult, std::ref(Key));
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -410,7 +410,7 @@ namespace redis
     enum class SetOptions { None, SetIfNotExist, SetIfExist };
 
     template <class T1_, class T2_>
-    Request setCommand( T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None )
+    Request setCommand( const T1_& Key, const T2_& Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None )
     {
         Request r( "SET" );
         r << Key << Value;
@@ -424,15 +424,15 @@ namespace redis
     }
 
     template <class Connection, class T1_, class T2_>
-    auto set(Connection& con, boost::system::error_code& ec, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
+    auto set(Connection& con, boost::system::error_code& ec, const T1_& Key, const T2_& Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::sync_universal(con, ec, &setCommand<decltype(Key), decltype(Value)>, &OKResult, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::sync_universal(con, ec, &setCommand<decltype(Key), decltype(Value)>, &OKResult, std::ref(Key), std::ref(Value), ExpireTimeInMilliseconds, Options);
     }
 
     template <class Connection, class CompletionToken, class T1_, class T2_>
-    auto async_set(Connection& con, CompletionToken&& token, T1_ Key, T2_ Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
+    auto async_set(Connection& con, CompletionToken&& token, const T1_& Key, const T2_& Value, std::chrono::milliseconds ExpireTimeInMilliseconds = std::chrono::milliseconds::zero(), SetOptions Options = SetOptions::None)
     {
-        return Detail::async_universal(con, token, &setCommand<decltype(Key), decltype(Value)>, &OKResult, Key, Value, ExpireTimeInMilliseconds, Options);
+        return Detail::async_universal(con, token, &setCommand<decltype(Key), decltype(Value)>, &OKResult, std::ref(Key), std::ref(Value), ExpireTimeInMilliseconds, Options);
     }
 
 }

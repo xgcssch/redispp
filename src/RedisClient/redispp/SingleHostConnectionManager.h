@@ -27,7 +27,7 @@ namespace redis
                 boost::asio::ip::tcp::socket Socket( io_service );
 
                 boost::asio::ip::tcp::resolver resolver( io_service );
-                boost::asio::ip::tcp::resolver::query query( SingleHostConnectionManager_.Servername_, std::to_string( SingleHostConnectionManager_.Port_ ) );
+                boost::asio::ip::tcp::resolver::query query( std::get<0>(SingleHostConnectionManager_.Server_), std::to_string( std::get<1>(SingleHostConnectionManager_.Server_) ) );
                 boost::asio::connect( Socket, resolver.resolve( query ), ec );
 
                 return Socket;
@@ -42,7 +42,7 @@ namespace redis
                 boost::asio::async_result<decltype(handler)> result( handler );
 
                 std::shared_ptr<boost::asio::ip::tcp::resolver> spResolver = std::make_shared<boost::asio::ip::tcp::resolver>( io_service );
-                boost::asio::ip::tcp::resolver::query query( SingleHostConnectionManager_.Servername_, std::to_string( SingleHostConnectionManager_.Port_ ) );
+                boost::asio::ip::tcp::resolver::query query( std::get<0>(SingleHostConnectionManager_.Server_), std::to_string( std::get<1>(SingleHostConnectionManager_.Server_) ) );
                 spResolver->async_resolve( query,
                                            [&io_service, handler, spResolver]( const boost::system::error_code& error, const boost::asio::ip::tcp::resolver::iterator& iterator ) mutable {
                     if( error )
@@ -67,13 +67,8 @@ namespace redis
         SingleHostConnectionManager(const SingleHostConnectionManager&) = delete;
         SingleHostConnectionManager& operator=(const SingleHostConnectionManager&) = delete;
 
-        SingleHostConnectionManager(const std::string& Servername = "localhost", int Port = 6379) :
-            Servername_(Servername),
-            Port_(Port)
-        {}
-
-        SingleHostConnectionManager(const std::tuple<std::string,int>& Servername) :
-            SingleHostConnectionManager(std::get<0>(Servername), std::get<1>(Servername))
+        SingleHostConnectionManager( const Host& Server = { "localhost", 6379 } ) :
+            Server_(Server)
         {}
 
         Instance getInstance() const
@@ -81,8 +76,7 @@ namespace redis
             return Instance( *this );
         }
     private:
-        std::string Servername_;
-        int Port_;
+        Host Server_;
     };
 }
 

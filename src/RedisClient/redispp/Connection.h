@@ -33,13 +33,13 @@ namespace redis
         size_t requestCount() const { return Requests_.size(); }
     };
 
-    template<class T_>
+    template<class DebugStreamType_>
     class PipelineResult
     {
         std::shared_ptr<Response::ElementContainer>           spResponses_;
-        std::shared_ptr<typename ResponseHandler<T_>::BufferContainerType> spBufferContainer_;
+        std::shared_ptr<typename ResponseHandler<DebugStreamType_>::BufferContainerType> spBufferContainer_;
     public:
-        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<T_>::BufferContainerType>& spBufferContainer ) :
+        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<DebugStreamType_>::BufferContainerType>& spBufferContainer ) :
             spResponses_( spResponses ),
             spBufferContainer_( spBufferContainer )
         {}
@@ -76,21 +76,22 @@ namespace redis
         }
     };
 
-    template<class T_>
-    class ConnectionBase : std::enable_shared_from_this<ConnectionBase<T_> >
+    template<class DebugStreamType_, class NotificationSinkType_=NullNotificationSink>
+    class ConnectionBase : std::enable_shared_from_this<ConnectionBase<DebugStreamType_> >
     {
         ConnectionBase(const ConnectionBase&) = delete;
         ConnectionBase& operator=(const ConnectionBase&) = delete;
 
     public:
-        ConnectionBase(boost::asio::io_service& io_service, int64_t Index ) :
+        ConnectionBase(boost::asio::io_service& io_service, int64_t Index, NotificationSinkType_ NotificationSink ) :
             io_service_(io_service),
             Strand_(io_service),
             Socket_(io_service),
-            Index_( Index )
+            Index_( Index ),
+            NotificationSink_(NotificationSink)
         {}
 
-        void requestCreated(typename ResponseHandler<T_>::ResponseHandle ResponseHandler)
+        void requestCreated(typename ResponseHandler<DebugStreamType_>::ResponseHandle ResponseHandler)
         {
             _ResponseQueue.push(ResponseHandler);
         }
@@ -104,23 +105,24 @@ namespace redis
         boost::asio::io_service& io_service_;
         boost::asio::io_service::strand Strand_;
         boost::asio::ip::tcp::socket Socket_;
-        std::queue<typename ResponseHandler<T_>::ResponseHandle> _ResponseQueue;
+        std::queue<typename ResponseHandler<DebugStreamType_>::ResponseHandle> _ResponseQueue;
         int64_t Index_;
+        NotificationSinkType_ NotificationSink_;
         std::string LastServerError_;
     };
 
-    template <class ConnectionManagerType, class T_=NullStream>
-    class Connection : private ConnectionBase<T_>
+    template <class ConnectionManagerType, class DebugStreamType_=NullDebugStream, class NotificationSinkType_=NullNotificationSink>
+    class Connection : private ConnectionBase<DebugStreamType_,NotificationSinkType_>
     {
     public:
-        Connection(boost::asio::io_service& io_service, const ConnectionManagerType& Manager, int64_t Index=0 ) :
-            ConnectionBase( io_service, Index ),
+        Connection( boost::asio::io_service& io_service, const ConnectionManagerType& Manager, int64_t Index = 0, NotificationSinkType_ NotificationSink = NotificationSinkType_{} ) :
+            ConnectionBase( io_service, Index, NotificationSink ),
             ConnectionManagerInstance_(Manager.getInstance())
         {}
 
         auto transmit( const Request& Command, boost::system::error_code& ec )
         {
-            auto res = std::make_unique<typename ResponseHandler<T_>>();
+            auto res = std::make_unique<typename ResponseHandler<DebugStreamType_>>();
             for( ;;)
             {
                 if( !Socket_.is_open() )
@@ -135,6 +137,8 @@ namespace redis
                             Detail::SocketConnectionManager scm( Socket );
                             Connection<Detail::SocketConnectionManager> CurrentConnection( io_service_, scm );
 
+                            NotificationSink_.trace( "Connection::transmit: selected database '{}'", Index_ );
+
                             redis::select( CurrentConnection, ec, Index_ );
 
                             Socket_ = CurrentConnection.passSocket();
@@ -144,7 +148,7 @@ namespace redis
                     }
                 }
 
-                boost::asio::write( Socket_, Command.bufferSequence(), ec );
+                auto BytesWritten = boost::asio::write( Socket_, Command.bufferSequence(), ec );
                 if( ec )
                 {
                     Socket_.close();
@@ -152,6 +156,8 @@ namespace redis
                     // Try again!
                     continue;
                 }
+
+                NotificationSink_.debug( "Connection::transmit: sent {} bytes of data", BytesWritten );
 
                 break;
             }
@@ -166,14 +172,16 @@ namespace redis
                     return res;
                 }
 
+                NotificationSink_.debug( "Connection::transmit: received {} bytes of data", BytesRead );
+
             } while( !res->dataReceived( BytesRead ) );
 
             return res;
         }
 
-        PipelineResult<T_> transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
+        PipelineResult<DebugStreamType_> transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
         {
-            ResponseHandler<T_> res;
+            ResponseHandler<DebugStreamType_> res;
             size_t ExpectedResponses = thePipeline.requestCount();
             auto spResponses = std::make_shared<std::vector<std::shared_ptr<redis::Response>>>( ExpectedResponses );
 
@@ -268,7 +276,7 @@ namespace redis
         }
 
         template <class	ConnectHandler>
-        void internalReceiveData(std::shared_ptr<ResponseHandler<T_>>& spServerResponse, ConnectHandler& handler)
+        void internalReceiveData(std::shared_ptr<ResponseHandler<DebugStreamType_>>& spServerResponse, ConnectHandler& handler)
         {
             Socket_.async_read_some(boost::asio::buffer(spServerResponse->buffer()),
                                     [this, spServerResponse, handler](const boost::system::error_code& ec, std::size_t BytesReceived) mutable
@@ -296,7 +304,7 @@ namespace redis
                     handler(ec, Response());
                 else
                 {
-                    auto spServerResponse = std::make_shared<ResponseHandler<T_>>();
+                    auto spServerResponse = std::make_shared<ResponseHandler<DebugStreamType_>>();
 
                     internalReceiveData(std::move(spServerResponse), std::forward<ConnectHandler>(handler));
                 }

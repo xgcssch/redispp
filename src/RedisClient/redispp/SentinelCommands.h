@@ -15,17 +15,17 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request sentinelGetMasterAddrByNameCommand( T1_ Mastername )
+    Request sentinelGetMasterAddrByNameCommand( const T1_& Mastername )
     {
         Request r( "SENTINEL", "get-master-addr-by-name" );
         r << Mastername;
         return r;
     }
 
-    inline auto sentinelGetMasterAddrByNameResult( const Response& Data, boost::system::error_code& ec )
+    inline Host sentinelGetMasterAddrByNameResult( const Response& Data, boost::system::error_code& ec )
     {
         if( Data.type() == Response::Type::Array && Data.elements().size() == 2 )
-            return std::make_pair( Data[0].string(), Data[1].string() );
+            return std::make_tuple( Data[0].string(), std::stoi( Data[1].string() ) );
         else
         {
             if( Data.type() == Response::Type::Null )
@@ -33,21 +33,21 @@ namespace redis
             else
                 ec = ::redis::make_error_code( ErrorCodes::protocol_error );
 
-            return std::make_pair( std::string(), std::string() );
+            return std::make_tuple( std::string(), 0 );
         }
     }
 
     /// <returns>Pair of HostIP and Port</returns>
     template <class Connection, class T1_>
-    auto sentinel_getMasterAddrByName(Connection& con, boost::system::error_code& ec, T1_ Mastername)
+    auto sentinel_getMasterAddrByName(Connection& con, boost::system::error_code& ec, const T1_& Mastername)
     {
-        return Detail::sync_universal(con, ec, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, Mastername);
+        return Detail::sync_universal(con, ec, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, std::ref(Mastername));
     }
 
     template <class Connection, class CompletionToken, class T1_>
-    auto async_sentinel_getMasterAddrByName(Connection& con, CompletionToken&& token, T1_ Mastername)
+    auto async_sentinel_getMasterAddrByName(Connection& con, CompletionToken&& token, const T1_& Mastername)
     {
-        return Detail::async_universal(con, token, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, Mastername);
+        return Detail::async_universal(con, token, &sentinelGetMasterAddrByNameCommand<decltype(Mastername)>, &sentinelGetMasterAddrByNameResult, std::ref(Mastername));
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,7 +55,7 @@ namespace redis
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     template <class T1_>
-    Request sentinelSentinelsCommand( T1_ Mastername )
+    Request sentinelSentinelsCommand( const T1_& Mastername )
     {
         Request r( "SENTINEL", "sentinels" );
         r << Mastername;
@@ -95,15 +95,15 @@ namespace redis
     }
 
     template <class Connection, class T1_>
-    auto sentinel_sentinels(Connection& con, boost::system::error_code& ec, T1_ Mastername)
+    auto sentinel_sentinels(Connection& con, boost::system::error_code& ec, const T1_& Mastername)
     {
-        return Detail::sync_universal(con, ec, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, Mastername);
+        return Detail::sync_universal(con, ec, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, std::ref(Mastername));
     }
 
     template <class Connection, class CompletionToken, class T1_>
-    auto async_sentinel_sentinels(Connection& con, CompletionToken&& token, T1_ Mastername)
+    auto async_sentinel_sentinels(Connection& con, CompletionToken&& token, const T1_& Mastername)
     {
-        return Detail::async_universal(con, token, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, Mastername);
+        return Detail::async_universal(con, token, &sentinelSentinelsCommand<decltype(Mastername)>, &sentinelSentinelsResult, std::ref(Mastername));
     }
 
 }

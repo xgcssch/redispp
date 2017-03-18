@@ -145,7 +145,7 @@ namespace redis
 
     // This class handles responses from the Redis Server
     // It exposes a buffer where to put data in, functions to process a chunk of data and accessors to the result objects
-    template<class DebugStreamType_=NullStream>
+    template<class DebugStreamType_=NullDebugStream>
     class ResponseHandler
     {
     public:

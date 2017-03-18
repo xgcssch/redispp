@@ -8,15 +8,35 @@
 
 namespace redis
 {
-    class NullStream
+    using Host = std::tuple<std::string, int>;
+
+    class NullDebugStream
     {
     public:
         template<class DebugStreamType_>
-        NullStream& operator<<( const DebugStreamType_& ) {
+        NullDebugStream& operator<<( const DebugStreamType_& ) {
             return *this;
         }
     };
 
+    class NullNotificationSink
+    {
+    public:
+        template <typename... Args>
+        void debug( const Args & ... args ) {}
+        template <typename... Args>
+        void trace( const Args & ... args ) {}
+        template <typename... Args>
+        void warning( const Args & ... args ) {}
+        template <typename... Args>
+        void error( const Args & ... args ) {}
+    };
+}
+
+std::ostream& operator<<( std::ostream& Out, const redis::Host& h )
+{
+    Out << "[" << std::get<0>(h) << ":" << std::get<1>(h) << "]";
+    return Out;
 }
 
 #endif

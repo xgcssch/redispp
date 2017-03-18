@@ -11,6 +11,9 @@
 #include "redispp/Commands.h"
 #include "redispp/HashCommands.h"
 
+#include "C:\work\Aewt\MidWar\MODULE\COMMONUTILSV2\cppformat/format.h"
+#include "C:\work\Aewt\MidWar\MODULE\COMMONUTILSV2\cppformat/format.cc"
+
 #ifndef _DEBUGf
 
 #include <time.h>
@@ -23,8 +26,8 @@ std::stringstream Out;
 
 namespace po = boost::program_options;
 
-template<typename HandlerType, class T_>
-bool testit(const std::string& Teststring, redis::ResponseHandler<T_>& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
+template<typename HandlerType, class DebugStreamType_>
+bool testit(const std::string& Teststring, redis::ResponseHandler<DebugStreamType_>& res, HandlerType&& handler, size_t TransmissionLimit=std::numeric_limits<size_t>::max())
 {
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);
@@ -64,6 +67,19 @@ bool testit(const std::string& Teststring, redis::ResponseHandler<T_>& res, Hand
     return ParseCompleted;
 }
 
+class CErrNotificationSink
+{
+public:
+    template <typename... Args>
+    void debug( const Args & ... args ) { std::cerr << "Debug:   " << fmt::format( args... ) << std::endl; }
+    template <typename... Args>
+    void trace( const Args & ... args ) { std::cerr << "Trace:   " << fmt::format( args... ) << std::endl; }
+    template <typename... Args>
+    void warning( const Args & ... args ) { std::cerr << "Warning: " << fmt::format( args... ) << std::endl; }
+    template <typename... Args>
+    void error( const Args & ... args ) { std::cerr << "Error:   " << fmt::format( args... ) << std::endl; }
+};
+
 
 int main(int argc, char**argv)
 {
@@ -72,6 +88,7 @@ int main(int argc, char**argv)
 
     try
     {
+#ifdef sdfasdf
         //auto Result = testit("$30\r\n012345678901234567890123456789\r\n", redis::ResponseHandler(5), 
         //                      [](auto ParseId, const auto& myresult) { 
         //    if ( myresult.type() != redis::Response::Type::BulkString ) return false;
@@ -90,7 +107,7 @@ int main(int argc, char**argv)
         if ( !Result )
             std::cerr << "error!\n";
         return 0;
-
+#endif
         po::options_description CommandlineOptionsDescription("Usage: redisclient [OPTIONS]");
         CommandlineOptionsDescription.add_options()
             ("help",                                                                                "Output this text and exit")
@@ -116,26 +133,32 @@ int main(int argc, char**argv)
 
         using namespace redis;
 
+        CErrNotificationSink sink;
+
         //redis::SingleHostConnectionManager scm(Hostname, Port);
-        redis::MultipleHostsConnectionManager mcm(io_service, 
+        redis::MultipleHostsConnectionManager<CErrNotificationSink&> mcm(io_service, 
             { 
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 },
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }
-            }
+                Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 },
+                Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
+                Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }
+            },
+            sink
         );
-        redis::SentinelConnectionManager<> secm( io_service,
+        redis::SentinelConnectionManager<redis::NullDebugStream,CErrNotificationSink> secm( io_service,
             {
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 }/*,
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
-                MultipleHostsConnectionManager::Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }*/
-            }, "almaster"
+                Host{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 }/*,
+                Host{ "hgf-vb-vg-254.int.alte-leipziger.de", 26379 },
+                Host{ "hgf-vb-vg-857.int.alte-leipziger.de", 26379 }*/
+            }, "almaster", sink
         );
+
+        //Host xx{ "hgf-vb-vg-116.int.alte-leipziger.de", 26379 };
+        //fmt::format("{}", xx);
 
         //redis::Connection<redis::SingleHostConnectionManager> con(io_service, scm);
         //redis::Connection<redis::MultipleHostsConnectionManager> con( io_service, mcm );
         //redis::Connection<redis::SentinelConnectionManager> con(io_service, secm, 1);
-        redis::Connection<redis::SentinelConnectionManager<>> RedisConnection(io_service, secm, 10);
+        redis::Connection<redis::SentinelConnectionManager<redis::NullDebugStream,CErrNotificationSink>> RedisConnection(io_service, secm, 10);
 
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
@@ -340,7 +363,7 @@ int main(int argc, char**argv)
 
 #else
 template<typename HandlerType>
-bool testit(const std::string& Teststring, redis::ResponseHandler& res, HandlerType&& handler )
+bool testit(const std::string& Teststring, redis::ResponseHandler<>& res, HandlerType&& handler )
 {
     boost::asio::const_buffer InputBuffer = boost::asio::buffer(Teststring);
     size_t InputBufferSize = boost::asio::buffer_size(InputBuffer);

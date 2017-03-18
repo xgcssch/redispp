@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef REDISPP_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
 #define REDISPP_MULTIPLEHOSTSCONNECTIONMANAGER_INCLUDED
 
@@ -14,14 +16,14 @@
 
 #include "redispp/SingleHostConnectionManager.h"
 #include "redispp/Error.h"
+#include "redispp.h"
 
 namespace redis
 {
+    template<class NotificationSinkType_=NullNotificationSink>
     class MultipleHostsConnectionManager
     {
     public:
-        typedef std::tuple<std::string, int> Host;
-
         class HostContainer
         {
         public:
@@ -64,8 +66,9 @@ namespace redis
             Instance( const Instance& ) = default;
             Instance& operator=( const Instance& ) = delete;
 
-            Instance( const HostContainer& Hosts ) :
-                Hosts_( Hosts.get() )
+            Instance( const HostContainer& Hosts, NotificationSinkType_ NotificationSink ) :
+                Hosts_( Hosts.get() ),
+                NotificationSink_( NotificationSink )
             {
                 CurrentHostIterator_ = Hosts_.begin();
                 spInnerConnectionManager_ = std::make_shared<SingleHostConnectionManager>( *CurrentHostIterator_ );
@@ -77,8 +80,16 @@ namespace redis
                 {
                     auto ConnectedSocket = SingleHostConnectionManager( SingleHost ).getInstance().getConnectedSocket( io_service, ec );
                     if( !ec )
+                    {
+                        NotificationSink_.trace( "MultipleHostsConnectionManager: Successfully connected to host '{}'", SingleHost );
+
                         return ConnectedSocket;
+                    }
+                    else
+                        NotificationSink_.trace( "MultipleHostsConnectionManager: unable to establish connection to host '{}'", SingleHost );
                 }
+
+                NotificationSink_.trace( "MultipleHostsConnectionManager: unable to establish any connection!" );
 
                 ec = ::redis::make_error_code( ErrorCodes::no_usable_server );
 
@@ -126,23 +137,26 @@ namespace redis
             }
 
         private:
-            HostContainer::ContainerType Hosts_;
-            HostContainer::ContainerType::const_iterator CurrentHostIterator_;
+            typename HostContainer::ContainerType Hosts_;
+            NotificationSinkType_ NotificationSink_;
+            typename HostContainer::ContainerType::const_iterator CurrentHostIterator_;
             std::shared_ptr<SingleHostConnectionManager> spInnerConnectionManager_;
         };
 
         MultipleHostsConnectionManager(const MultipleHostsConnectionManager&) = delete;
         MultipleHostsConnectionManager& operator=(const MultipleHostsConnectionManager&) = delete;
 
-        MultipleHostsConnectionManager(boost::asio::io_service& io_service, const HostContainer::ContainerType& Hosts) :
+        MultipleHostsConnectionManager( boost::asio::io_service& io_service, const typename HostContainer::ContainerType& Hosts, NotificationSinkType_ NotificationSink = NotificationSinkType_{} ) :
             Hosts_(Hosts),
+            NotificationSink_(NotificationSink),
             Strand_(io_service)
         {
             commonContruction( Hosts );
         }
 
-        MultipleHostsConnectionManager(boost::asio::io_service& io_service, HostContainer::ContainerType&& Hosts) :
+        MultipleHostsConnectionManager(boost::asio::io_service& io_service, typename HostContainer::ContainerType&& Hosts, NotificationSinkType_ NotificationSink = NotificationSinkType_{}) :
             Hosts_(std::move(Hosts)),
+            NotificationSink_(NotificationSink),
             Strand_(io_service)
         {
             commonContruction( Hosts_.container() );
@@ -150,11 +164,11 @@ namespace redis
 
         Instance getInstance() const
         {
-            return Instance( Hosts_ );
+            return Instance( Hosts_, NotificationSink_ );
         }
 
     private:
-        void commonContruction( const HostContainer::ContainerType& Hosts )
+        void commonContruction( const typename HostContainer::ContainerType& Hosts )
         {
             if( Hosts.empty() )
                 throw std::out_of_range( "Hostcontainer does not contain any hosts." );
@@ -162,6 +176,7 @@ namespace redis
 
         boost::asio::io_service::strand Strand_;
         HostContainer Hosts_;
+        NotificationSinkType_ NotificationSink_;
     };
 }
 

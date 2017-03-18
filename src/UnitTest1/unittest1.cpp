@@ -92,23 +92,23 @@ std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string&
     return Responses;
 }
 
-template<typename HandlerType, class T_=redis::NullStream>
+template<typename HandlerType, class DebugStreamType_=redis::NullDebugStream>
 bool testit_complete(const std::string& Teststring, HandlerType&& handler)
 {
     bool Result = true;
     for (size_t Buffersize = 1; Buffersize <= Teststring.size(); ++Buffersize)
     {
-        Result = testit(Teststring, redis::ResponseHandler<T_>(Buffersize), handler);
+        Result = testit(Teststring, redis::ResponseHandler<DebugStreamType_>(Buffersize), handler);
         if (!Result)
         {
             std::cerr << "Failure at test " << Teststring << " Buffersize: " << Buffersize << std::endl;
             return false;
         }
     }
-    Result = testit(Teststring, redis::ResponseHandler<T_>(), handler);
+    Result = testit(Teststring, redis::ResponseHandler<DebugStreamType_>(), handler);
     if (!Result)
     {
-        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler<T_>::DefaultBuffersize << std::endl;
+        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler<DebugStreamType_>::DefaultBuffersize << std::endl;
         return false;
     }
     return Result;
