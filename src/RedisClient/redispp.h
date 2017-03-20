@@ -10,15 +10,6 @@ namespace redis
 {
     using Host = std::tuple<std::string, int>;
 
-    class NullDebugStream
-    {
-    public:
-        template<class DebugStreamType_>
-        NullDebugStream& operator<<( const DebugStreamType_& ) {
-            return *this;
-        }
-    };
-
     class NullNotificationSink
     {
     public:

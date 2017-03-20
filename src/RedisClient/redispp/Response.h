@@ -114,8 +114,8 @@ namespace redis
     };
 
     // used to stream the textual type of this response
-    template<class DebugStreamType_>
-    inline DebugStreamType_& operator<<( DebugStreamType_ &os, const Response::Type& r )
+    template<class T_>
+    inline T_& operator<<( T_ &os, const Response::Type& r )
     {
         switch( r )
         {
@@ -137,15 +137,15 @@ namespace redis
     }
 
     // used to stream the textual content of this response
-    template<class DebugStreamType_>
-    inline DebugStreamType_& operator<<( DebugStreamType_ &os, const Response& r )
+    template<class T_>
+    inline T_& operator<<( T_ &os, const Response& r )
     {
         return os << r.dump();
     }
 
     // This class handles responses from the Redis Server
     // It exposes a buffer where to put data in, functions to process a chunk of data and accessors to the result objects
-    template<class DebugStreamType_=NullDebugStream>
+    template<class NotificationSinkType_=NullNotificationSink>
     class ResponseHandler
     {
     public:
@@ -163,10 +163,10 @@ namespace redis
         ResponseHandler(
             // Initial buffersize to use
             size_t Buffersize = DefaultBuffersize,
-            DebugStreamType_ DebugStream = DebugStreamType_{}
+            NotificationSinkType_ NotificationSink = NotificationSinkType_{}
         ) :
             InitialBuffersize_( Buffersize ),
-            DebugStream_(DebugStream),
+            NotificationSink_(NotificationSink),
             spBufferContainer_( std::make_shared<BufferContainerType>() )
         {
             spBufferContainer_->emplace_back( Buffersize );
@@ -184,13 +184,13 @@ namespace redis
             size_t BytesReceived
         )
         {
-            DebugStream_ << "dataReceived(): BytesReceived:" << BytesReceived << "\n";
+            NotificationSink_.debug( "ResponseHandler::dataReceived(): BytesReceived: {} - ParsePosition:{} ParsedBytesInBuffer:{} UnparsedBytesInBuffer:{} Offset:{} StartPosition:{} Buffersize:{}", BytesReceived, ParsePosition_, ParsedBytesInBuffer_, UnparsedBytesInBuffer_, Offset_, StartPosition_, boost::asio::buffer_size( raw_buffer() ) );
 
             // Currently active boost::asio::mutable_buffer
             boost::asio::mutable_buffer CurrentBuffer = raw_buffer();
 
             // Number of bytes remaining in buffer before processing the current chunk
-            size_t BuffersizeRemaining = boost::asio::buffer_size( CurrentBuffer ) - UnparsedBytesInBuffer_;
+            size_t BuffersizeRemaining = boost::asio::buffer_size( CurrentBuffer ) - Offset_ -  ParsePosition_;
             if( BytesReceived > BuffersizeRemaining )
                 BytesReceived = BuffersizeRemaining;
 
@@ -199,7 +199,7 @@ namespace redis
             // Pointer to the current element in the buffer
             InternalBufferType::const_pointer pCurrent = boost::asio::buffer_cast<char*>(CurrentBuffer) + Offset_ + ParsePosition_;
             // Pointer one after the last valid element in the buffer
-            InternalBufferType::const_pointer pEnd = boost::asio::buffer_cast<char*>(CurrentBuffer) + Offset_ + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + BytesReceived;
+            InternalBufferType::const_pointer pEnd = boost::asio::buffer_cast<char*>(CurrentBuffer) + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_ + StartPosition_ + BytesReceived;
 
             // Minimum number of bytes expected when there was not enough data to finish the parsing.
             // At least two bytes - CRLF - are expected
@@ -212,6 +212,8 @@ namespace redis
             bool ToplevelFinished = false;
             for( ; pCurrent < pEnd && !ToplevelFinished; ++pCurrent, ++ParsePosition_, ++ParsedBytesInBuffer_ )
             {
+                //NotificationSink_.debug( "pCurrent {} pEnd:{} ToplevelFinished:{} ParsePosition:{} ParsedBytesInBuffer:{}", reinterpret_cast<size_t>(pCurrent), reinterpret_cast<size_t>(pEnd), ToplevelFinished, ParsePosition_, ParsedBytesInBuffer_ );
+
                 // Is this a CR LF combination?
                 if( CRSeen_ && *pCurrent == '\n' )
                 {
@@ -229,19 +231,19 @@ namespace redis
                         case '+':
                             // + denotes a simple string - it stretches from the first byte following the typeindicator to the CRLF
                             spPart = std::make_shared<Response>( Response::Type::SimpleString, pTopEntryStart + 1, Length );
-                            DebugStream_ << "simple string parsed '" << std::string(pTopEntryStart + 1, Length) << "'\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): simple string parsed '{}'", std::string(pTopEntryStart + 1, Length) );
                             break;
 
                         case '-':
                             // - denotes an error - the attached message stretches from the first byte following the typeindicator to the CRLF
                             spPart = std::make_shared<Response>( Response::Type::Error, pTopEntryStart + 1, Length );
-                            DebugStream_ << "error parsed '" << std::string(pTopEntryStart + 1, Length) << "'\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): error parsed '{}'", std::string(pTopEntryStart + 1, Length) );
                             break;
 
                         case ':':
                             // : denotes an integer - the value stretches from the first byte following the typeindicator to the CRLF
                             spPart = std::make_shared<Response>( Response::Type::Integer, pTopEntryStart + 1, Length );
-                            DebugStream_ << "integer parsed '" << std::string(pTopEntryStart + 1, Length) << "'\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): integer parsed '{}'", std::string(pTopEntryStart + 1, Length) );
                             break;
 
                         case '$':
@@ -250,7 +252,7 @@ namespace redis
                             //   number of bytes in the string - without the required CRLF following the data
 
                             // Number of bytes in bulkstring
-                            auto BulkstringSize = local_atoi( pTopEntryStart + 1 );
+                            auto BulkstringSize = local_atoi( pTopEntryStart + 1, pTopEntryStart + 1 + Length );
                             // Support for "Null Bulk String" - returns a null object according to spec
                             if( BulkstringSize == -1 )
                             {
@@ -265,7 +267,7 @@ namespace redis
                             // Simple case: bulkstring is complete in buffer
                             if( RemainingBytes >= BulkstringSize )
                             {
-                                DebugStream_ << "string parsed, all bytes in buffer '" << std::string(pCurrent + 1, BulkstringSize - 2) << "'\n";
+                                NotificationSink_.debug( "ResponseHandler::dataReceived(): bulkstring parsed, all bytes in buffer '{}'", std::string(pCurrent + 1, BulkstringSize - 2) );
 
                                 // check \r\n
                                 spPart = std::make_shared<Response>( Response::Type::BulkString, pCurrent + 1, BulkstringSize - 2 );
@@ -275,7 +277,7 @@ namespace redis
                                 break;
                             }
 
-                            DebugStream_ << "string parsed, not all bytes in buffer RemainingBytes: " << RemainingBytes << " BulkstringSize: " << BulkstringSize << "\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): bulkstring parsed, not all bytes in buffer - BulkstringSize: {} RemainingBytes: {}", BulkstringSize, RemainingBytes );
 
                             // not all needed data is available - wait for more ...
                             BytesToExpect = BulkstringSize - RemainingBytes;
@@ -294,9 +296,9 @@ namespace redis
                             //   number of elements contained in the array
 
                             // Number of items in array
-                            off_t Items = local_atoi( pTopEntryStart + 1 );
+                            off_t Items = local_atoi( pTopEntryStart + 1, pTopEntryStart + 1 + Length );
 
-                            DebugStream_ << "array parsed, items: " << Items << "\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): array parsed, itemcount {}", Items );
 
                             // Support for "Null Array" - returns a null object according to spec
                             if( Items == -1 )
@@ -336,7 +338,7 @@ namespace redis
                     // Part parsed?
                     if( spPart )
                     {
-                        DebugStream_ << "part parsed\n";
+                        NotificationSink_.debug( "ResponseHandler::dataReceived(): part of response completely parsed" );
 
                         // reset indicators
                         CRSeen_ = false;
@@ -349,7 +351,7 @@ namespace redis
 
                         while( !Partstack_.empty() )
                         {
-                            DebugStream_ << "Removing part from partstack\n";
+                            NotificationSink_.debug( "ResponseHandler::dataReceived(): Removing part from partstack" );
 
                             // every byte starts a new element and pushes an entry on the stack
                             // as we now have finished the latest element, we remove it from the stack
@@ -396,7 +398,7 @@ namespace redis
                     // then save the current position as the first position for the next component
                     StartPosition_ = ParsePosition_;
 
-                    DebugStream_ << "CRLF seen - setting StartPosition:" << StartPosition_  << "\n";
+                    NotificationSink_.debug( "ResponseHandler::dataReceived(): CRLF (or first call) seen - setting StartPosition {}", StartPosition_ );
 
                     // reset the flag
                     CRLFSeen_ = false;
@@ -420,13 +422,16 @@ namespace redis
             // or the current buffer is not large enough to hold the total number of expected bytes
             if( !FinishedParsing )
             {
-                BuffersizeRemaining -= Offset_;
+                //BuffersizeRemaining -= Offset_;
+
+                NotificationSink_.debug( "ResponseHandler::dataReceived(): not finished BuffersizeRemaining:{} ParsedBytesInBuffer:{} UnparsedBytesInBuffer:{} Offset:{} StartPosition:{} BytesToExpect:{} ParsePosition:{}", BuffersizeRemaining, ParsedBytesInBuffer_, UnparsedBytesInBuffer_, Offset_, StartPosition_, BytesToExpect, ParsePosition_ );
 
                 // Is no buffer left or will the expected data not fit in the current buffer?
                 auto RequiredSize = ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_ + StartPosition_ + BytesToExpect + 1;
+
                 auto bs = boost::asio::buffer_size( raw_buffer() );
 
-                DebugStream_ << "not finished parsing - RequiredSize:" << RequiredSize << " Buffersize: " << bs << " BytesToExpect: " << BytesToExpect << " StartPosition: " << StartPosition_ << "\n";
+                NotificationSink_.debug( "ResponseHandler::dataReceived(): not finished parsing - RequiredSize:{} Buffersize:{} BytesToExpect:{} StartPosition:{}", RequiredSize, bs, BytesToExpect, StartPosition_ );
 
                 if( RequiredSize > bs )
                 //if( !BuffersizeRemaining || BuffersizeRemaining < BytesToExpect )
@@ -441,7 +446,7 @@ namespace redis
                     // Add a new buffer with the computed size
                     spBufferContainer_->emplace_back( RequiredBuffersize );
 
-                    DebugStream_ << "new buffer is:" << RequiredBuffersize << " transfered bytes: " << ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ << "\n";
+                    NotificationSink_.debug( "ResponseHandler::dataReceived(): allocation new buffer - RequiredBuffersize:{} transfered bytes:{}", RequiredBuffersize, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ );
 
                     // copy the still needed data from the old buffer to the new buffer
                     memcpy( raw_buffer_pointer(), pTopEntryStart, ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ );
@@ -450,17 +455,20 @@ namespace redis
                     if( ParsedBytesInBuffer_ )
                         ParsePosition_ -= StartPosition_;
                     else
+                    {
                         ParsePosition_ = 0;
+                        CRLFSeen_ = false;
+                        Partstack_.emplace();
+                    }
 
                     Offset_ = 0;
                     StartPosition_ = 0;
-                    CRLFSeen_ = false;
-                    Partstack_.emplace();
+
                 }
             }
             else
             {
-                DebugStream_ << "finished parsing\n";
+                NotificationSink_.debug( "ResponseHandler::dataReceived(): finished parsing" );
             }
 
             return FinishedParsing;
@@ -471,24 +479,25 @@ namespace redis
         {
             if( (ParsedBytesInBuffer_ + UnparsedBytesInBuffer_) == boost::asio::buffer_size( raw_buffer() ) )
             {
-                DebugStream_ << "buffer():  ParsedBytesInBuffer_:" << ParsedBytesInBuffer_ << " UnparsedBytesInBuffer: " << UnparsedBytesInBuffer_ << " Buffersize: " << boost::asio::buffer_size( raw_buffer() ) << "\n";
-
                 spBufferContainer_->emplace_back( Buffersize_ );
+
+                NotificationSink_.debug( "ResponseHandler::buffer(): allocation new buffer level {} - ParsedBytesInBuffer:{} UnparsedBytesInBuffer:{} Buffersize:{}", spBufferContainer_->size(), ParsedBytesInBuffer_, UnparsedBytesInBuffer_, boost::asio::buffer_size( raw_buffer() ) );
                 ParsePosition_ = 0;
                 Offset_ = 0;
                 StartPosition_ = 0;
                 ParsedBytesInBuffer_ = 0;
             }
+            else
+                NotificationSink_.debug( "ResponseHandler::buffer(): using current buffer level {} - ParsedBytesInBuffer:{} UnparsedBytesInBuffer:{} Offset:{} StartPosition:{} Buffersize:{}", spBufferContainer_->size(), ParsedBytesInBuffer_, UnparsedBytesInBuffer_, Offset_, StartPosition_, boost::asio::buffer_size( raw_buffer() ) );
 
-            DebugStream_ << "ParsedBytesInBuffer:" << ParsedBytesInBuffer_ << " UnparsedBytesInBuffer: " << UnparsedBytesInBuffer_ << " Offset:" << Offset_ << " Buffersize: " << boost::asio::buffer_size( raw_buffer() ) << "\n";
-            return raw_buffer() + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_;
+            return raw_buffer() + ParsedBytesInBuffer_ + UnparsedBytesInBuffer_ + Offset_ + StartPosition_;
         }
 
         // commits the current parsed element and tries to complete the next toplevel parse
         // returns true if a parse at the topmost level has finished
         bool commit( bool KeepBuffer = false )
         {
-            DebugStream_ << "commit(): ParsedBytesInBuffer_:" << ParsedBytesInBuffer_ << " UnparsedBytesInBuffer: " << UnparsedBytesInBuffer_ << " Buffersize: " << boost::asio::buffer_size( raw_buffer() ) << " KeepBuffer:" << KeepBuffer << "\n";
+            NotificationSink_.debug( "ResponseHandler::commit(): ParsedBytesInBuffer:{} UnparsedBytesInBuffer:{} Offset:{} Buffersize:{} Keepbuffer:{}", ParsedBytesInBuffer_, UnparsedBytesInBuffer_, Offset_, boost::asio::buffer_size( raw_buffer() ), KeepBuffer );
 
             // Simple case: No valid data in buffer
             if( !UnparsedBytesInBuffer_ )
@@ -514,6 +523,7 @@ namespace redis
             Offset_ += ParsePosition_;
             ParsePosition_ = 0;
             ParsedBytesInBufferAdjustment_ = 0;
+            StartPosition_ = 0;
 
             // CRLFSeen_ is already true when we reach here
 
@@ -556,7 +566,7 @@ namespace redis
 
         };
 
-        DebugStreamType_ DebugStream_;
+        NotificationSinkType_ NotificationSink_;
 
         // Size of the initial buffer after first initialization or reset of the ResponseHandler
         size_t InitialBuffersize_;
@@ -599,14 +609,18 @@ namespace redis
             return boost::asio::buffer( spBufferContainer_->back() );
         }
 
-        static off_t local_atoi( const char *p ) {
+        // Local version of atoi with bounds checking
+        static off_t local_atoi( const char *p, const char *pEnd ) {
             off_t  x = 0;
             bool neg = false;
+            if ( p == pEnd )
+                return 0;
+
             if( *p == '-' ) {
                 neg = true;
                 ++p;
             }
-            while( *p >= '0' && *p <= '9' ) {
+            while( p < pEnd && *p >= '0' && *p <= '9' ) {
                 x = (x * 10) + (*p - '0');
                 ++p;
             }

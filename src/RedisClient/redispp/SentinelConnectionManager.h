@@ -18,7 +18,7 @@
 
 namespace redis
 {
-    template<class DebugStreamType_=NullDebugStream, class NotificationSinkType_=NullNotificationSink>
+    template<class NotificationSinkType_=NullNotificationSink>
     class SentinelConnectionManager
     {
     public:
@@ -44,7 +44,7 @@ namespace redis
             boost::asio::ip::tcp::socket getConnectedSocket( boost::asio::io_service& io_service, boost::system::error_code& ec )
             {
                 MultipleHostsConnectionManager<NotificationSinkType_> mhcm( io_service, Hosts_, NotificationSink_ );
-                redis::Connection<redis::MultipleHostsConnectionManager<NotificationSinkType_>, DebugStreamType_, NotificationSinkType_> SentinelConnection( io_service, mhcm, 0, NotificationSink_ );
+                redis::Connection<redis::MultipleHostsConnectionManager<NotificationSinkType_>, NotificationSinkType_> SentinelConnection( io_service, mhcm, 0, NotificationSink_ );
 
                 std::chrono::time_point<std::chrono::steady_clock> ConnectionStartTime;
                 ConnectionStartTime = std::chrono::steady_clock::now();
@@ -64,8 +64,9 @@ namespace redis
                         auto rh = SentinelConnection.remote_endpoint();
 
                         NotificationSink_.debug( "SentinelConnectionManager::getConnectedSocket: Using Sentinel '{}'", rh );
-
                         NotificationSink_.debug( "SentinelConnectionManager::getConnectedSocket: Got Master '{}' for set '{}'", GetMasterAddrByNameResult.second, MasterSet_ );
+
+                        GetMasterAddrByNameResult.first->commit();
 
                         // Update Sentinel List
                         auto GetSentinelsResult = redis::sentinel_sentinels( SentinelConnection, ec, MasterSet_ );
@@ -82,7 +83,7 @@ namespace redis
                         }
 
                         SingleHostConnectionManager shcm( GetMasterAddrByNameResult.second );
-                        redis::Connection<redis::SingleHostConnectionManager, DebugStreamType_, NotificationSinkType_> MasterConnection( io_service, shcm, 0, NotificationSink_ );
+                        redis::Connection<redis::SingleHostConnectionManager, NotificationSinkType_> MasterConnection( io_service, shcm, 0, NotificationSink_ );
 
                         // Test if the master aggrees with its role
                         auto Role = redis::role( MasterConnection, ec );

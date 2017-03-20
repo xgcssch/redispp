@@ -92,23 +92,23 @@ std::vector<std::shared_ptr<redis::Response>> testitmultiple( const std::string&
     return Responses;
 }
 
-template<typename HandlerType, class DebugStreamType_=redis::NullDebugStream>
+template<typename HandlerType, class NotificationSinkType_=redis::NullNotificationSink>
 bool testit_complete(const std::string& Teststring, HandlerType&& handler)
 {
     bool Result = true;
     for (size_t Buffersize = 1; Buffersize <= Teststring.size(); ++Buffersize)
     {
-        Result = testit(Teststring, redis::ResponseHandler<DebugStreamType_>(Buffersize), handler);
+        Result = testit(Teststring, redis::ResponseHandler<NotificationSinkType_>(Buffersize), handler);
         if (!Result)
         {
             std::cerr << "Failure at test " << Teststring << " Buffersize: " << Buffersize << std::endl;
             return false;
         }
     }
-    Result = testit(Teststring, redis::ResponseHandler<DebugStreamType_>(), handler);
+    Result = testit(Teststring, redis::ResponseHandler<NotificationSinkType_>(), handler);
     if (!Result)
     {
-        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler<DebugStreamType_>::DefaultBuffersize << std::endl;
+        std::cerr << "Failure at test " << Teststring << " Buffersize: " << redis::ResponseHandler<NotificationSinkType_>::DefaultBuffersize << std::endl;
         return false;
     }
     return Result;
@@ -202,6 +202,44 @@ namespace UnitTest1
                 );
             }
         }
+
+        TEST_METHOD(Redis_Response_Parse_Multiple_Responses_Different_Buffersize2)
+        {
+            std::string test1("*2\r\n$5\r\n01234\r\n$5\r\n56789\r\n*21\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n$1\r\nX\r\n");
+
+            for (size_t Buffersize = 1; Buffersize < test1.size();++Buffersize)
+            {
+                redis::ResponseHandler<> rh(Buffersize);
+
+                testit(test1, rh,
+                        [](auto ParseId, const auto& myresult)
+                {
+                    switch (ParseId)
+                    {
+                        case 1:
+                            Assert::IsTrue(myresult.type() == redis::Response::Type::Array);
+                            Assert::IsTrue(myresult.elements().size() == 2);
+                            Assert::IsTrue(myresult[0].type() == redis::Response::Type::BulkString);
+                            Assert::IsTrue(myresult[0].string() == "01234");
+                            Assert::IsTrue(myresult[1].type() == redis::Response::Type::BulkString);
+                            Assert::IsTrue(myresult[1].string() == "56789");
+                            break;
+                        case 2:
+                            Assert::IsTrue(myresult.type() == redis::Response::Type::Array);
+                            Assert::IsTrue(myresult.elements().size() == 21);
+                            Assert::IsTrue(myresult[0].type() == redis::Response::Type::BulkString);
+                            Assert::IsTrue(myresult[0].string() == "X");
+                            break;
+                        default:
+                            Assert::Fail(L"Fail");
+                    }
+
+                    return true;
+                }
+                );
+            }
+        }
+
 
         TEST_METHOD( Redis_Response_Parse_Multiple_Responses_Different_Buffersize_CombinedResult )
         {

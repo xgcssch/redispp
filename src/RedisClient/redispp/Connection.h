@@ -33,13 +33,13 @@ namespace redis
         size_t requestCount() const { return Requests_.size(); }
     };
 
-    template<class DebugStreamType_>
+    template<class NotificationSinkType_>
     class PipelineResult
     {
         std::shared_ptr<Response::ElementContainer>           spResponses_;
-        std::shared_ptr<typename ResponseHandler<DebugStreamType_>::BufferContainerType> spBufferContainer_;
+        std::shared_ptr<typename ResponseHandler<NotificationSinkType_>::BufferContainerType> spBufferContainer_;
     public:
-        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<DebugStreamType_>::BufferContainerType>& spBufferContainer ) :
+        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<NotificationSinkType_>::BufferContainerType>& spBufferContainer ) :
             spResponses_( spResponses ),
             spBufferContainer_( spBufferContainer )
         {}
@@ -76,8 +76,8 @@ namespace redis
         }
     };
 
-    template<class DebugStreamType_, class NotificationSinkType_=NullNotificationSink>
-    class ConnectionBase : std::enable_shared_from_this<ConnectionBase<DebugStreamType_> >
+    template<class NotificationSinkType_=NullNotificationSink>
+    class ConnectionBase : std::enable_shared_from_this<ConnectionBase<NotificationSinkType_> >
     {
         ConnectionBase(const ConnectionBase&) = delete;
         ConnectionBase& operator=(const ConnectionBase&) = delete;
@@ -91,7 +91,7 @@ namespace redis
             NotificationSink_(NotificationSink)
         {}
 
-        void requestCreated(typename ResponseHandler<DebugStreamType_>::ResponseHandle ResponseHandler)
+        void requestCreated(typename ResponseHandler<NotificationSinkType_>::ResponseHandle ResponseHandler)
         {
             _ResponseQueue.push(ResponseHandler);
         }
@@ -105,14 +105,14 @@ namespace redis
         boost::asio::io_service& io_service_;
         boost::asio::io_service::strand Strand_;
         boost::asio::ip::tcp::socket Socket_;
-        std::queue<typename ResponseHandler<DebugStreamType_>::ResponseHandle> _ResponseQueue;
+        std::queue<typename ResponseHandler<NotificationSinkType_>::ResponseHandle> _ResponseQueue;
         int64_t Index_;
         NotificationSinkType_ NotificationSink_;
         std::string LastServerError_;
     };
 
-    template <class ConnectionManagerType, class DebugStreamType_=NullDebugStream, class NotificationSinkType_=NullNotificationSink>
-    class Connection : private ConnectionBase<DebugStreamType_,NotificationSinkType_>
+    template <class ConnectionManagerType, class NotificationSinkType_=NullNotificationSink>
+    class Connection : private ConnectionBase<NotificationSinkType_>
     {
     public:
         Connection( boost::asio::io_service& io_service, const ConnectionManagerType& Manager, int64_t Index = 0, NotificationSinkType_ NotificationSink = NotificationSinkType_{} ) :
@@ -122,7 +122,7 @@ namespace redis
 
         auto transmit( const Request& Command, boost::system::error_code& ec )
         {
-            auto res = std::make_unique<typename ResponseHandler<DebugStreamType_>>();
+            auto res = std::make_unique<typename ResponseHandler<NotificationSinkType_>>(ResponseHandler<NotificationSinkType_>::DefaultBuffersize, NotificationSink_);
             for( ;;)
             {
                 if( !Socket_.is_open() )
@@ -135,7 +135,7 @@ namespace redis
                         if( Index_ )
                         {
                             Detail::SocketConnectionManager scm( Socket );
-                            Connection<Detail::SocketConnectionManager, DebugStreamType_, NotificationSinkType_> CurrentConnection( io_service_, scm, 0, NotificationSink_ );
+                            Connection<Detail::SocketConnectionManager, NotificationSinkType_> CurrentConnection( io_service_, scm, 0, NotificationSink_ );
 
                             redis::select( CurrentConnection, ec, Index_ );
 
@@ -179,9 +179,9 @@ namespace redis
             return res;
         }
 
-        PipelineResult<DebugStreamType_> transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
+        PipelineResult<NotificationSinkType_> transmit(const Pipeline& thePipeline, boost::system::error_code& ec)
         {
-            ResponseHandler<DebugStreamType_> res;
+            ResponseHandler<NotificationSinkType_> res;
             size_t ExpectedResponses = thePipeline.requestCount();
             auto spResponses = std::make_shared<std::vector<std::shared_ptr<redis::Response>>>( ExpectedResponses );
 
@@ -276,7 +276,7 @@ namespace redis
         }
 
         template <class	ConnectHandler>
-        void internalReceiveData(std::shared_ptr<ResponseHandler<DebugStreamType_>>& spServerResponse, ConnectHandler& handler)
+        void internalReceiveData(std::shared_ptr<ResponseHandler<NotificationSinkType_>>& spServerResponse, ConnectHandler& handler)
         {
             Socket_.async_read_some(boost::asio::buffer(spServerResponse->buffer()),
                                     [this, spServerResponse, handler](const boost::system::error_code& ec, std::size_t BytesReceived) mutable
@@ -304,7 +304,7 @@ namespace redis
                     handler(ec, Response());
                 else
                 {
-                    auto spServerResponse = std::make_shared<ResponseHandler<DebugStreamType_>>();
+                    auto spServerResponse = std::make_shared<ResponseHandler<NotificationSinkType_>>();
 
                     internalReceiveData(std::move(spServerResponse), std::forward<ConnectHandler>(handler));
                 }
