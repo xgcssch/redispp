@@ -38,18 +38,22 @@ namespace redis
     {
         std::shared_ptr<Response::ElementContainer>           spResponses_;
         std::shared_ptr<typename ResponseHandler<NotificationSinkType_>::BufferContainerType> spBufferContainer_;
+        NotificationSinkType_ NotificationSink_;
     public:
-        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<NotificationSinkType_>::BufferContainerType>& spBufferContainer ) :
+        PipelineResult( std::shared_ptr<Response::ElementContainer>& spResponses, std::shared_ptr<typename ResponseHandler<NotificationSinkType_>::BufferContainerType>& spBufferContainer, NotificationSinkType_ NotificationSink ) :
             spResponses_( spResponses ),
-            spBufferContainer_( spBufferContainer )
+            spBufferContainer_( spBufferContainer ),
+            NotificationSink_( NotificationSink )
         {}
         PipelineResult( const PipelineResult& rhs ) :
             spResponses_( rhs.spResponses_ ),
-            spBufferContainer_( rhs.spBufferContainer_ )
+            spBufferContainer_( rhs.spBufferContainer_ ),
+            NotificationSink_( rhs.NotificationSink_ )
         {}
         PipelineResult( const PipelineResult&& rhs ) :
             spResponses_( std::move(rhs.spResponses_) ),
-            spBufferContainer_( std::move(rhs.spBufferContainer_) )
+            spBufferContainer_( std::move(rhs.spBufferContainer_) ),
+            NotificationSink_( std::move(rhs.NotificationSink_) )
         {}
         PipelineResult& operator=( const PipelineResult& rhs )
         {
@@ -57,6 +61,7 @@ namespace redis
             {
                 spResponses_ = rhs.spResponses_;
                 spBufferContainer_ = rhs.spBufferContainer_;
+                NotificationSink_ = rhs.NotificationSink_;
             }
             return *this;
         }
@@ -66,6 +71,7 @@ namespace redis
             {
                 spResponses_ = std::move(rhs.spResponses_);
                 spBufferContainer_ = std::move(rhs.spBufferContainer_);
+                NotificationSink_ = std::move(rhs.NotificationSink_);
             }
             return *this;
         }
@@ -191,13 +197,13 @@ namespace redis
                 {
                     auto Socket = ConnectionManagerInstance_.getConnectedSocket( io_service_, ec );
                     if( ec )
-                        return PipelineResult( spResponses, res.bufferContainer() );
+                        return PipelineResult<NotificationSinkType_>( spResponses, res.bufferContainer(), NotificationSink_ );
                     else
                     {
                         if( Index_ )
                         {
                             Detail::SocketConnectionManager scm( Socket );
-                            Connection<Detail::SocketConnectionManager> CurrentConnection( io_service_, scm );
+                            Connection<Detail::SocketConnectionManager, NotificationSinkType_> CurrentConnection( io_service_, scm, 0, NotificationSink_ );
 
                             redis::select( CurrentConnection, ec, Index_ );
 
@@ -231,7 +237,7 @@ namespace redis
                     if( ec )
                     {
                         Socket_.close();
-                        return PipelineResult( spResponses, res.bufferContainer() );
+                        return PipelineResult<NotificationSinkType_>( spResponses, res.bufferContainer(), NotificationSink_ );
                     }
 
                 } while( !res.dataReceived( BytesRead ) );
@@ -242,7 +248,7 @@ namespace redis
                 } while( res.commit( true ) );
             }
 
-            return PipelineResult( spResponses, res.bufferContainer() );
+            return PipelineResult<NotificationSinkType_>( spResponses, res.bufferContainer(), NotificationSink_ );
         }
 
         template <class	CompletionToken>

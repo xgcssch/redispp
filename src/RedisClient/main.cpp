@@ -48,8 +48,8 @@ bool testit( const std::string& Teststring, redis::ResponseHandler<DebugStreamTy
         Chunk++;
 
         size_t BytesToCopy = std::min( { RemainingBytes, Buffersize, TransmissionLimit } );
-        memcpy( boost::asio::buffer_cast<void*>(ResponseBuffer), boost::asio::buffer_cast<const char*>(InputBuffer) + ConsumedBytes, BytesToCopy );
-        //boost::asio::buffer_copy(ResponseBuffer, InputBuffer + ConsumedBytes);
+        //memcpy( boost::asio::buffer_cast<void*>(ResponseBuffer), boost::asio::buffer_cast<const char*>(InputBuffer) + ConsumedBytes, BytesToCopy );
+        boost::asio::buffer_copy(ResponseBuffer, InputBuffer + ConsumedBytes);
         ConsumedBytes += BytesToCopy;
         RemainingBytes -= BytesToCopy;
 
@@ -86,7 +86,7 @@ public:
    
     ~CErrNotificationSink()
     {
-        //std::cerr << ss_;
+        std::cerr << ss_;
     }
 
     template <typename... Args>
@@ -99,7 +99,7 @@ public:
     void error( const Args & ... args ) { output( fmt::format( "Error:   {}\n", fmt::format( args... ) ) ); }
 };
 
-//#define sdfasdf
+#define _sdfasdf
 int main(int argc, char**argv)
 {
     std::string             Hostname;
@@ -229,8 +229,8 @@ int main(int argc, char**argv)
         //auto Result = testit("*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n", redis::ResponseHandler<CErrNotificationSink&>(1,sink), 
         //auto Result = testit("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", redis::ResponseHandler<CErrNotificationSink&>(1,sink), 
         //auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler<CErrNotificationSink&>(7,sink ), 
-        auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler<CErrNotificationSink&>(7,sink), 
-        //auto Result = testit(std::string(peer1_3,sizeof(peer1_3)), redis::ResponseHandler<CErrNotificationSink&>(redis::ResponseHandler<>::DefaultBuffersize, sink), 
+        //auto Result = testit("*3\r\n$9\r\nsubscribe\r\n$5\r\nfirst\r\n:1\r\n*3\r\n$9\r\nsubscribe\r\n$6\r\nsecond\r\n:2\r\n", redis::ResponseHandler<CErrNotificationSink&>(7,sink), 
+        auto Result = testit(std::string(peer1_3,sizeof(peer1_3)), redis::ResponseHandler<CErrNotificationSink&>(redis::ResponseHandler<>::DefaultBuffersize, sink), 
                               []( auto ParseId, const auto& myresult ) {
             return true;
         }, { 4 } );
@@ -293,6 +293,11 @@ int main(int argc, char**argv)
 
         std::string Key( "USR:gerasch.t@al-h.de" );
         boost::system::error_code ec;
+
+        //auto RXX = existsCommand( Key );
+        //auto RXX = existsCommand( std::array<std::string, 2>{ Key, Key } );
+        //auto RX = redis::exists( RedisConnection, ec, std::array<std::string, 2>{ Key, Key } );
+        auto RY = redis::exists( RedisConnection, ec, Key );
 
         auto R0 = redis::get( RedisConnection, ec, Key );
         if( !ec && R0.second )

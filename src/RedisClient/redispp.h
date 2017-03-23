@@ -24,7 +24,7 @@ namespace redis
     };
 }
 
-std::ostream& operator<<( std::ostream& Out, const redis::Host& h )
+inline std::ostream& operator<<( std::ostream& Out, const redis::Host& h )
 {
     Out << "[" << std::get<0>(h) << ":" << std::get<1>(h) << "]";
     return Out;

@@ -14,6 +14,7 @@
 #include <list>
 #include <map>
 #include <iterator>
+#include <type_traits>
 
 // The implementation of a command consists of four functions:
 // 1. a function that creates a redis::Request object from its parameters
@@ -252,6 +253,37 @@ namespace redis
     {
         return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, std::ref(Key));
     }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                                                   E X I S T
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    template <class T1_>
+    Request existsCommand( const T1_& Key )
+    {
+        Request r( "EXISTS" );
+        r << Key;
+        return r;
+    }
+
+    //#define REDISPP_FUNCTION( Functionname, ... ) \
+//    template <class Connection, class T1_> \
+//    auto get(Connection& con, boost::system::error_code& ec, const T1_& Key)
+//    {
+//        return Detail::sync_universal(con, ec, &getCommand<decltype(Key)>, &getResult, std::ref(Key));
+//    }
+
+    template <class Connection, class T1_>
+    auto exists(Connection& con, boost::system::error_code& ec, const T1_& Key)
+    {
+        return Detail::sync_universal(con, ec, &existsCommand<std::remove_reference_t<decltype(std::as_const(Key))> >, &IntResult, std::ref(Key));
+    }
+
+    //template <class Connection, class CompletionToken, class T1_>
+    //auto async_get(Connection& con, CompletionToken&& token, T1_ Key)
+    //{
+    //    return Detail::async_universal(con, token, &getCommand<decltype(Key)>, &getResult, std::ref(Key));
+    //}
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //                                                     D E L
