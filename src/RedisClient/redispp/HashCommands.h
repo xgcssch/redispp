@@ -99,7 +99,7 @@ namespace redis
     template <class Connection, class T1_, class T2_, class T3_>
     auto hset( Connection& con, boost::system::error_code& ec, const T1_& Key, const T2_& Field, const T3_& Value )
     {
-        return Detail::sync_universal( con, ec, &hsetCommand<decltype(Key), decltype(Field), decltype(Value)>, &IntResult, std::ref(Key), std::ref(Field), std::ref(Value) );
+        return Detail::sync_universal( con, ec, &hsetCommand<std::remove_reference_t<decltype(std::as_const(Key))>, std::remove_reference_t<decltype(std::as_const(Field))>, std::remove_reference_t<decltype(std::as_const(Value))> >, &IntResult, std::ref(Key), std::ref(Field), std::ref(Value) );
     }
 
     template <class Connection, class CompletionToken, class T1_, class T2_, class T3_>
@@ -123,7 +123,7 @@ namespace redis
     template <class Connection, class T1_, class T2_, class T3_>
     auto hsetnx( Connection& con, boost::system::error_code& ec, const T1_& Key, const T2_& Field, const T3_& Value )
     {
-        return Detail::sync_universal( con, ec, &hsetnxCommand<decltype(Key), decltype(Field), decltype(Value)>, &IntResult, std::ref(Key), std::ref(Field), std::ref(Value) );
+        return Detail::sync_universal( con, ec, &hsetnxCommand<std::remove_reference_t<decltype(std::as_const(Key))>, std::remove_reference_t<decltype(std::as_const(Field))>, std::remove_reference_t<decltype(std::as_const(Value))> >, &IntResult, std::ref(Key), std::ref(Field), std::ref(Value) );
     }
 
     template <class Connection, class CompletionToken, class T1_, class T2_, class T3_>
